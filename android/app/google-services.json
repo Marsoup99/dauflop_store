@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "80413761686",
+    "project_id": "dauflop-store",
+    "storage_bucket": "dauflop-store.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:80413761686:android:e882025aa514283b3622b7",
+        "android_client_info": {
+          "package_name": "com.example.dauflop_store"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCzpwjqUH5WgeHrUxkD3151de-DGvdzm8A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
