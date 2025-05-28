@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart'; // Import image_picker
 
+// --- NEW: Firebase Imports ---
+import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../models/item_model.dart'; // Your Item model
 
 class AddItemScreen extends StatefulWidget {
   const AddItemScreen({super.key});
@@ -25,6 +29,8 @@ class _AddItemScreenState extends State<AddItemScreen> {
   // We'll add a variable here later to hold the selected image file
   XFile? _pickedImageFile; // To store the picked image file
   Uint8List? _pickedImageBytes; // To store image bytes for web preview
+  bool _isSaving = false;
+  // This variable will be used to show a loading indicator while saving
   @override
   void dispose() {
     // Dispose controllers when the widget is removed from the widget tree
@@ -70,22 +76,81 @@ class _AddItemScreenState extends State<AddItemScreen> {
   }
 }
 
-  void _saveItem() {
-    if (_formKey.currentState!.validate()) {
-      // Form is valid, process the data
-      // We'll add logic here to:
-      // 1. Upload image to Firebase Storage (if selected)
-      // 2. Get the image URL
-      //    (if image is selected, otherwise use a placeholder or null)
-      // 3. Create an Item object with data from controllers and image URL
-      // 4. Save the Item object to Firestore
-      print('Category: ${_categoryController.text}');
-      print('Brand: ${_brandController.text}');
-      print('Image selected: ${_pickedImageFile!.path}');
-      // ... and so on for other fields
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Item details would be saved here!')),
+  Future<void> _saveItem() async {
+    if (!_formKey.currentState!.validate()) {
+      return; // Form is not valid, do not proceed
+    }
+
+    setState(() {
+      _isSaving = true; // Show loading indicator
+    });
+
+    String? imageUrl; // Initialize imageUrl as nullable
+
+    try {
+      // 1. Upload image to Firebase Storage (ONLY if an image is picked)
+      if (_pickedImageBytes != null && _pickedImageFile != null) {
+        String imageName =
+            'item_images/${DateTime.now().millisecondsSinceEpoch}_${_pickedImageFile!.name}';
+        firebase_storage.Reference ref =
+            firebase_storage.FirebaseStorage.instance.ref().child(imageName);
+        
+        final metadata = firebase_storage.SettableMetadata(
+            contentType: _pickedImageFile!.mimeType ?? 'image/jpeg');
+        
+        await ref.putData(_pickedImageBytes!, metadata);
+        imageUrl = await ref.getDownloadURL(); // Get the image URL
+      }
+
+      // 2. Create an Item object (imageUrl will be null if no image was picked/uploaded)
+      final item = Item(
+        category: _categoryController.text.trim(),
+        brand: _brandController.text.trim(),
+        color: _colorController.text.trim(),
+        buyInPrice: double.parse(_buyInPriceController.text),
+        price: double.parse(_priceController.text),
+        quantity: int.parse(_quantityController.text),
+        imageUrl: imageUrl, // This will be null if no image was selected
+        lastModified: Timestamp.now(),
       );
+
+      // 3. Save the Item object to Firestore
+      await FirebaseFirestore.instance.collection('items').add(item.toMap());
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Item saved successfully!'),
+              backgroundColor: Colors.green),
+        );
+        // Clear the form and image after successful save
+        _formKey.currentState!.reset();
+        _categoryController.clear();
+        _brandController.clear();
+        _colorController.clear();
+        _buyInPriceController.clear();
+        _priceController.clear();
+        _quantityController.clear();
+        setState(() {
+          _pickedImageFile = null;
+          _pickedImageBytes = null;
+        });
+      }
+    } catch (e) {
+      print('Error saving item: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Failed to save item: $e'),
+              backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false; // Hide loading indicator
+        });
+      }
     }
   }
 
@@ -224,10 +289,17 @@ class _AddItemScreenState extends State<AddItemScreen> {
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: _saveItem,
+                // --- UPDATED: Show loading or save text ---
+                onPressed: _isSaving ? null : _saveItem, // Disable while saving
                 style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16.0)),
-                child: const Text('Save Item'),
+                child: _isSaving
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Save Item'),
               ),
             ],
           ),
