@@ -1,5 +1,8 @@
+import 'dart:typed_data'; // Needed for Uint8List for web image preview
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // For FilteringTextInputFormatter
+import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart'; // Import image_picker
+
 
 class AddItemScreen extends StatefulWidget {
   const AddItemScreen({super.key});
@@ -20,8 +23,8 @@ class _AddItemScreenState extends State<AddItemScreen> {
   final _quantityController = TextEditingController();
 
   // We'll add a variable here later to hold the selected image file
-  // File? _selectedImage;
-
+  XFile? _pickedImageFile; // To store the picked image file
+  Uint8List? _pickedImageBytes; // To store image bytes for web preview
   @override
   void dispose() {
     // Dispose controllers when the widget is removed from the widget tree
@@ -34,16 +37,51 @@ class _AddItemScreenState extends State<AddItemScreen> {
     super.dispose();
   }
 
+ Future<void> _pickImage() async {
+  final ImagePicker picker = ImagePicker();
+
+  // Aim for a height of 480px.
+  // maxWidth can be set generously or null to let height constraint dominate
+  // while maintaining aspect ratio.
+  // imageQuality can be adjusted (0-100).
+  final XFile? image = await picker.pickImage(
+    source: ImageSource.gallery,
+    maxHeight: 480,  // Target height of 480 pixels
+    maxWidth: 1000, // Optional: constrain max width too, or set to null
+                   // If null, image_picker scales based on maxHeight and original aspect ratio.
+    imageQuality: 80,  // Adjust quality (0-100) for file size vs. visual quality
+  );
+
+  if (image != null) {
+    final bytes = await image.readAsBytes();
+
+    // Image is within size limits after processing
+    setState(() {
+      _pickedImageFile = image;
+      _pickedImageBytes = bytes;
+    });
+  } else {
+    // User canceled the picker
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No image selected.')),
+      );
+    }
+  }
+}
+
   void _saveItem() {
     if (_formKey.currentState!.validate()) {
       // Form is valid, process the data
       // We'll add logic here to:
       // 1. Upload image to Firebase Storage (if selected)
       // 2. Get the image URL
+      //    (if image is selected, otherwise use a placeholder or null)
       // 3. Create an Item object with data from controllers and image URL
       // 4. Save the Item object to Firestore
       print('Category: ${_categoryController.text}');
       print('Brand: ${_brandController.text}');
+      print('Image selected: ${_pickedImageFile!.path}');
       // ... and so on for other fields
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Item details would be saved here!')),
@@ -151,23 +189,44 @@ class _AddItemScreenState extends State<AddItemScreen> {
               ),
               const SizedBox(height: 24),
               // Placeholder for Image Picker button
+              if (_pickedImageBytes != null)
+                Container(
+                  height: 200,
+                  margin: const EdgeInsets.only(bottom: 16.0),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey),
+                    borderRadius: BorderRadius.circular(4.0),
+                  ),
+                  child: Image.memory(
+                    _pickedImageBytes!,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Center(child: Text('Error loading image preview'));
+                    },
+                  ),
+                )
+              else
+                Container(
+                  height: 150,
+                  margin: const EdgeInsets.only(bottom: 16.0),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey),
+                    borderRadius: BorderRadius.circular(4.0),
+                  ),
+                  child: const Center(child: Text('No image selected')),
+                ),
+
+              // --- UPDATED: Pick Image Button ---
               ElevatedButton.icon(
                 icon: const Icon(Icons.image_outlined),
-                label: const Text('Pick Image (Coming Soon)'),
-                onPressed: () {
-                  // _pickImage(); // We'll implement this later
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Image picker will be here!')),
-                  );
-                },
+                label: Text(_pickedImageFile == null ? 'Pick Image' : 'Change Image'),
+                onPressed: _pickImage, // Call the _pickImage method
               ),
-              // We'll display the selected image preview here later
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: _saveItem,
                 style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16.0)
-                ),
+                    padding: const EdgeInsets.symmetric(vertical: 16.0)),
                 child: const Text('Save Item'),
               ),
             ],
