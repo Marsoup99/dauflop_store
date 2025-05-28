@@ -1,40 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore
-import 'firebase_options.dart'; // THIS IS THE FILE THAT WAS JUST GENERATED
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'firebase_options.dart';
+import 'screens/main_layout.dart'; // Import your MainLayout
 
 void main() async {
-  // Ensure Flutter bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Initialize Firebase using the generated options
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-
-  // Enable Firestore offline persistence
   FirebaseFirestore.instance.enablePersistence(
     const PersistenceSettings(synchronizeTabs: true),
   );
-
-  runApp(MyApp());
+  runApp(const MyApp()); // Added const
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key}); // Added super.key for constructor
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'My Simple Store',
-      home: Scaffold(
-        appBar: AppBar(
-          title: const Text('Welcome to My Store'), // Added const
-        ),
-        body: const Center( // Added const
-          child: Text('Firebase Configured! Ready for Firestore/Storage setup.'),
-        ),
+      title: 'DauFlop Store', // You can change your app title here
+      theme: ThemeData( // Optional: Add a basic theme
+        primarySwatch: Colors.blue,
+        useMaterial3: true, // Recommended for modern look
       ),
+      home: const MainLayout(), // Set MainLayout as the home screen
     );
   }
 }
