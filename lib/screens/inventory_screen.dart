@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/item_model.dart';
 import '../models/pending_sale_model.dart';
+import 'widgets/inventory_item_tile.dart';
+import 'widgets/pending_sale_item_tile.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -14,8 +16,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _activeSearchQuery = '';
   String? _selectedCategory;
-  bool _isProcessingPendingAction = false;
-  Set<String> _processingMoveToPending = {};
+
+  // bool _isProcessingPendingAction = false;
+  // final Set<String> _processingMoveToPending = {};
 
   @override
   void dispose() {
@@ -37,53 +40,35 @@ class _InventoryScreenState extends State<InventoryScreen> {
     });
   }
 
+  // --- SIMPLIFIED: _markItemAsPending no longer manages UI loading state ---
   Future<void> _markItemAsPending(Item item) async {
-    if (item.id == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Item ID is missing.'), backgroundColor: Colors.red),
-      );
-      return;
+    // Removed: Client-side check for _processingMoveToPending.contains(item.id!)
+    // Removed: setState for _processingMoveToPending.add/remove
+
+    if (item.id == null) { // Should not happen if items come from Firestore
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Item ID is missing.'), backgroundColor: Colors.red));
+        return;
     }
-
-    // Client-side check to prevent multiple rapid clicks for the SAME item
-    if (_processingMoveToPending.contains(item.id!)) {
-      return; // Already processing this item
-    }
-
-    setState(() {
-      _processingMoveToPending.add(item.id!); // Add item ID to processing set
-    });
-
+    
     const int quantityToMoveToPending = 1;
-
-    // Get a reference to the item document
     DocumentReference itemRef = FirebaseFirestore.instance.collection('items').doc(item.id);
 
     try {
       await FirebaseFirestore.instance.runTransaction((transaction) async {
-        // 1. Read the current item data within the transaction
         DocumentSnapshot currentItemSnapshot = await transaction.get(itemRef);
-
         if (!currentItemSnapshot.exists) {
           throw Exception("Item does not exist!");
         }
-
         int currentQuantity = (currentItemSnapshot.data() as Map<String, dynamic>)['quantity'] as int? ?? 0;
-
-        // 2. Perform server-side validation
         if (currentQuantity < quantityToMoveToPending) {
-          // Not enough stock, throw an exception to abort the transaction
-          // This message will be caught by the catch block below
-          throw Exception('Not enough stock to move to pending. On shelf: $currentQuantity');
+          throw Exception('Not enough stock. On shelf: $currentQuantity');
         }
 
-        // 3. If validation passes, prepare updates for the item
         transaction.update(itemRef, {
           'quantity': FieldValue.increment(-quantityToMoveToPending),
           'lastModified': Timestamp.now(),
         });
 
-        // 4. Prepare data for the new document in 'pending_sales' collection
         final pendingSaleData = {
           'itemId': item.id,
           'itemName': '${item.brand} - ${item.category}',
@@ -110,24 +95,19 @@ class _InventoryScreenState extends State<InventoryScreen> {
           SnackBar(content: Text('Failed to move item to pending: ${e.toString()}'), backgroundColor: Colors.redAccent),
         );
       }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _processingMoveToPending.remove(item.id!); // Remove item ID from processing set
-        });
-      }
+      // Re-throw the error if you want the InventoryItemTile to also catch it
+      // and potentially handle its _isProcessing state differently on failure.
+      // For now, the tile's finally block will reset _isProcessing.
     }
+    // Removed: finally block that called setState for _processingMoveToPending
   }
 
   // --- UPDATED: Method to Confirm a Pending Sale ---
-  Future<void> _confirmPendingSale(PendingSale pendingSale) async { // Accepts PendingSale object
-    if (_isProcessingPendingAction) return;
-    setState(() => _isProcessingPendingAction = true);
+  Future<void> _confirmPendingSale(PendingSale pendingSale) async {
+    // Removed: setState for _isProcessingPendingAction
 
     try {
-      // Data is now conveniently available from the pendingSale object
       final double profitOnSale = (pendingSale.sellPriceAtPending - pendingSale.buyInPriceAtPending) * pendingSale.quantityPending;
-
       final salesTransactionData = {
         'itemId': pendingSale.itemId,
         'itemName': pendingSale.itemName,
@@ -141,16 +121,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
       };
 
       WriteBatch batch = FirebaseFirestore.instance.batch();
-
       DocumentReference salesTxRef = FirebaseFirestore.instance.collection('sales_transactions').doc();
       batch.set(salesTxRef, salesTransactionData);
-
-      DocumentReference pendingSaleRef = FirebaseFirestore.instance.collection('pending_sales').doc(pendingSale.id); // Use pendingSale.id
+      DocumentReference pendingSaleRef = FirebaseFirestore.instance.collection('pending_sales').doc(pendingSale.id);
       batch.delete(pendingSaleRef);
-      
       DocumentReference itemRef = FirebaseFirestore.instance.collection('items').doc(pendingSale.itemId);
       batch.update(itemRef, {'lastModified': Timestamp.now()});
-
       await batch.commit();
 
       if (mounted) {
@@ -165,30 +141,24 @@ class _InventoryScreenState extends State<InventoryScreen> {
           SnackBar(content: Text('Failed to confirm sale: $e'), backgroundColor: Colors.redAccent),
         );
       }
-    } finally {
-      if (mounted) {
-        setState(() => _isProcessingPendingAction = false);
-      }
+      rethrow; // Re-throw so the tile can catch it if needed for its own state
     }
+    // Removed: finally block setting _isProcessingPendingAction
   }
 
-  // --- UPDATED: Method to Cancel a Pending Sale ---
-  Future<void> _cancelPendingSale(PendingSale pendingSale) async { // Accepts PendingSale object
-    if (_isProcessingPendingAction) return;
-    setState(() => _isProcessingPendingAction = true);
+  // --- SIMPLIFIED: _cancelPendingSale ---
+  Future<void> _cancelPendingSale(PendingSale pendingSale) async {
+    // Removed: setState for _isProcessingPendingAction
 
     try {
       WriteBatch batch = FirebaseFirestore.instance.batch();
-
       DocumentReference itemRef = FirebaseFirestore.instance.collection('items').doc(pendingSale.itemId);
       batch.update(itemRef, {
-        'quantity': FieldValue.increment(pendingSale.quantityPending), // Use pendingSale.quantityPending
+        'quantity': FieldValue.increment(pendingSale.quantityPending),
         'lastModified': Timestamp.now(),
       });
-
-      DocumentReference pendingSaleRef = FirebaseFirestore.instance.collection('pending_sales').doc(pendingSale.id); // Use pendingSale.id
+      DocumentReference pendingSaleRef = FirebaseFirestore.instance.collection('pending_sales').doc(pendingSale.id);
       batch.delete(pendingSaleRef);
-
       await batch.commit();
 
       if (mounted) {
@@ -203,11 +173,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
           SnackBar(content: Text('Failed to cancel sale: $e'), backgroundColor: Colors.redAccent),
         );
       }
-    } finally {
-      if (mounted) {
-        setState(() => _isProcessingPendingAction = false);
-      }
+      rethrow; // Re-throw
     }
+    // Removed: finally block setting _isProcessingPendingAction
   }
 
   @override
@@ -263,9 +231,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     ),
                   ),
                   onChanged: (value) {
-                    if (mounted) {
-                      setState(() {}); // For suffixIcon visibility
-                    }
+                    // if (mounted) {
+                    //   setState(() {}); // For suffixIcon visibility
+                    // }
                   },
                 ),
               ),
@@ -316,7 +284,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('items')
-          .orderBy('lastModified', descending: true) // Or 'brand', 'category'
+          .orderBy('lastModified', descending: true)
           .snapshots(),
       builder: (BuildContext context, AsyncSnapshot<QuerySnapshot> snapshot) {
         if (snapshot.hasError) { return Center(child: Text('Error: ${snapshot.error}')); }
@@ -327,40 +295,22 @@ class _InventoryScreenState extends State<InventoryScreen> {
             .toList() ?? [];
 
         if (allItems.isEmpty) {
-           return Column(
-            children: [
-              _buildFilterControls([]),
-              const Expanded(child: Center(child: Text('No items in stock.'))),
-            ],
-          );
+           return Column(children: [_buildFilterControls([]), const Expanded(child: Center(child: Text('No items in stock.')))]);
         }
         
         List<String> categories = ["All Categories"];
         Set<String> uniqueCategories = {};
-        for (var item in allItems) {
-          if (item.category.isNotEmpty) {
-            uniqueCategories.add(item.category);
-          }
-        }
+        for (var item in allItems) { if (item.category.isNotEmpty) uniqueCategories.add(item.category); }
         categories.addAll(uniqueCategories.toList()..sort());
 
         final List<Item> filteredItems = allItems.where((item) {
-          bool categoryMatch = _selectedCategory == null ||
-                               _selectedCategory == "All Categories" ||
-                               item.category.toLowerCase() == _selectedCategory!.toLowerCase();
-
-          bool searchMatch = _activeSearchQuery.isEmpty ||
-                             item.brand.toLowerCase().contains(_activeSearchQuery) ||
-                             item.category.toLowerCase().contains(_activeSearchQuery) ||
-                             item.color.toLowerCase().contains(_activeSearchQuery);
-          
+          bool categoryMatch = _selectedCategory == null || _selectedCategory == "All Categories" || item.category.toLowerCase() == _selectedCategory!.toLowerCase();
+          bool searchMatch = _activeSearchQuery.isEmpty || item.brand.toLowerCase().contains(_activeSearchQuery) || item.category.toLowerCase().contains(_activeSearchQuery) || item.color.toLowerCase().contains(_activeSearchQuery);
           return categoryMatch && searchMatch;
         }).toList();
         
         if (_selectedCategory != null && !categories.contains(_selectedCategory) && _selectedCategory != "All Categories") {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) setState(() => _selectedCategory = "All Categories");
-            });
+            WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() => _selectedCategory = "All Categories"); });
         }
 
         return Column(
@@ -375,51 +325,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   padding: const EdgeInsets.all(8.0),
                   itemBuilder: (context, index) {
                     Item item = filteredItems[index];
-                    bool isCurrentlyProcessing = _processingMoveToPending.contains(item.id);
-                    // Button is enabled if there's on-shelf stock AND it's not currently being processed.
-                    bool canMarkPending = item.quantity > 0 && !isCurrentlyProcessing;
-
-                    return Card(
-                      margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
-                      child: ListTile(
-                        leading: SizedBox(
-                          width: 60,
-                          height: 60,
-                          child: item.imageUrl != null && item.imageUrl!.isNotEmpty
-                              ? Image.network(
-                                  item.imageUrl!,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) =>
-                                      const Icon(Icons.broken_image, size: 40),
-                                  loadingBuilder: (context, child, loadingProgress) {
-                                    if (loadingProgress == null) return child;
-                                    return Center(child: CircularProgressIndicator(
-                                      value: loadingProgress.expectedTotalBytes != null ?
-                                             loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes! : null,
-                                    ));
-                                  },
-                                )
-                              : Container(
-                                  color: Colors.grey[200],
-                                  child: const Icon(Icons.image_not_supported, size: 40, color: Colors.grey),
-                                ),
-                        ),
-                        title: Text('${item.brand} - ${item.category}'),
-                        subtitle: Text(
-                          'On Shelf: ${item.quantity} | Price: \$${item.price.toStringAsFixed(2)}'
-                        ),
-                        trailing: isCurrentlyProcessing
-                            ? const SizedBox( // Show a small loader for the specific item
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : IconButton(
-                                icon: const Icon(Icons.shopping_cart_checkout_outlined, color: Colors.blueAccent),
-                                tooltip: 'Move 1 to Pending Sale',
-                                onPressed: canMarkPending ? () => _markItemAsPending(item) : null,
-                              ),
-                      ),
+                    // --- USE THE NEW InventoryItemTile ---
+                    return InventoryItemTile(
+                      key: ValueKey(item.id), // Important for stateful list items
+                      item: item,
+                      onMarkItemAsPending: _markItemAsPending, // Pass the method
                     );
                   },
                 ),
@@ -430,7 +340,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
   }
 
-  // --- UPDATED: _buildPendingSalesTab method ---
   Widget _buildPendingSalesTab() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -438,65 +347,25 @@ class _InventoryScreenState extends State<InventoryScreen> {
           .orderBy('pendingTimestamp', descending: true)
           .snapshots(),
       builder: (BuildContext context, AsyncSnapshot<QuerySnapshot> snapshot) {
-        if (snapshot.hasError) {
-          return Center(child: Text('Something went wrong: ${snapshot.error}'));
-        }
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.data == null || snapshot.data!.docs.isEmpty) {
-          return const Center(child: Text('No sales are currently pending confirmation.'));
-        }
+        if (snapshot.hasError) { return Center(child: Text('Something went wrong: ${snapshot.error}')); }
+        if (snapshot.connectionState == ConnectionState.waiting) { return const Center(child: CircularProgressIndicator()); }
+        if (snapshot.data == null || snapshot.data!.docs.isEmpty) { return const Center(child: Text('No sales are currently pending confirmation.')); }
 
-        return ListView(
+        return ListView.builder( // Changed to ListView.builder
+          itemCount: snapshot.data!.docs.length,
           padding: const EdgeInsets.all(8.0),
-          children: snapshot.data!.docs.map((DocumentSnapshot document) {
-            // --- USE THE NEW MODEL ---
+          itemBuilder: (context, index) {
+            DocumentSnapshot document = snapshot.data!.docs[index];
             PendingSale pendingSale = PendingSale.fromMap(document.data()! as Map<String, dynamic>, document.id);
 
-            return Card(
-              margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
-              child: ListTile(
-                leading: SizedBox(
-                  width: 60,
-                  height: 60,
-                  child: pendingSale.imageUrl != null && pendingSale.imageUrl!.isNotEmpty
-                      ? Image.network(
-                          pendingSale.imageUrl!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) =>
-                              const Icon(Icons.broken_image, size: 40),
-                        )
-                      : Container(
-                          color: Colors.grey[200],
-                          child: const Icon(Icons.image_not_supported, size: 40, color: Colors.grey),
-                        ),
-                ),
-                title: Text(pendingSale.itemName),
-                subtitle: Text('Qty Pending: ${pendingSale.quantityPending}\nSell Price: \$${pendingSale.sellPriceAtPending.toStringAsFixed(2)}'),
-                isThreeLine: true,
-                trailing: _isProcessingPendingAction
-                  ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2,))
-                  : Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.cancel_outlined, color: Colors.red),
-                      tooltip: 'Cancel Sale',
-                      // --- PASS THE PendingSale OBJECT ---
-                      onPressed: () => _cancelPendingSale(pendingSale),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.check_circle_outline, color: Colors.green),
-                      tooltip: 'Confirm Sale',
-                      // --- PASS THE PendingSale OBJECT ---
-                      onPressed: () => _confirmPendingSale(pendingSale),
-                    ),
-                  ],
-                ),
-              ),
+            // --- USE THE NEW PendingSaleItemTile ---
+            return PendingSaleItemTile(
+              key: ValueKey(pendingSale.id), // Important for stateful list items
+              pendingSale: pendingSale,
+              onConfirm: _confirmPendingSale, // Pass the method
+              onCancel: _cancelPendingSale,   // Pass the method
             );
-          }).toList(),
+          },
         );
       },
     );
