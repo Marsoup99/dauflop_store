@@ -15,6 +15,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   String _activeSearchQuery = '';
   String? _selectedCategory;
   bool _isProcessingPendingAction = false;
+  Set<String> _processingMoveToPending = {};
 
   @override
   void dispose() {
@@ -37,45 +38,65 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   Future<void> _markItemAsPending(Item item) async {
-    if (item.quantity <= 0) { // Check current on-shelf quantity
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Item is out of stock! Cannot mark as pending.'), backgroundColor: Colors.orange),
-        );
-      }
+    if (item.id == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Item ID is missing.'), backgroundColor: Colors.red),
+      );
       return;
     }
 
-    const int quantityToMoveToPending = 1; // We are moving 1 unit
+    // Client-side check to prevent multiple rapid clicks for the SAME item
+    if (_processingMoveToPending.contains(item.id!)) {
+      return; // Already processing this item
+    }
 
-    // Data for the new document in 'pending_sales' collection
-    final pendingSaleData = {
-      'itemId': item.id,
-      'itemName': '${item.brand} - ${item.category}',
-      'itemColor': item.color,
-      'imageUrl': item.imageUrl,
-      'quantityPending': quantityToMoveToPending,
-      'buyInPriceAtPending': item.buyInPrice, // Capture current buy-in price
-      'sellPriceAtPending': item.price,     // Capture current selling price
-      'pendingTimestamp': Timestamp.now(),
-      // 'status': 'pending' // Implicit by being in this collection, or can be added
-    };
+    setState(() {
+      _processingMoveToPending.add(item.id!); // Add item ID to processing set
+    });
+
+    const int quantityToMoveToPending = 1;
+
+    // Get a reference to the item document
+    DocumentReference itemRef = FirebaseFirestore.instance.collection('items').doc(item.id);
 
     try {
-      WriteBatch batch = FirebaseFirestore.instance.batch();
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        // 1. Read the current item data within the transaction
+        DocumentSnapshot currentItemSnapshot = await transaction.get(itemRef);
 
-      // 1. Decrement quantity in the 'items' collection
-      DocumentReference itemRef = FirebaseFirestore.instance.collection('items').doc(item.id);
-      batch.update(itemRef, {
-        'quantity': FieldValue.increment(-quantityToMoveToPending),
-        'lastModified': Timestamp.now(), // Update lastModified for the item
+        if (!currentItemSnapshot.exists) {
+          throw Exception("Item does not exist!");
+        }
+
+        int currentQuantity = (currentItemSnapshot.data() as Map<String, dynamic>)['quantity'] as int? ?? 0;
+
+        // 2. Perform server-side validation
+        if (currentQuantity < quantityToMoveToPending) {
+          // Not enough stock, throw an exception to abort the transaction
+          // This message will be caught by the catch block below
+          throw Exception('Not enough stock to move to pending. On shelf: $currentQuantity');
+        }
+
+        // 3. If validation passes, prepare updates for the item
+        transaction.update(itemRef, {
+          'quantity': FieldValue.increment(-quantityToMoveToPending),
+          'lastModified': Timestamp.now(),
+        });
+
+        // 4. Prepare data for the new document in 'pending_sales' collection
+        final pendingSaleData = {
+          'itemId': item.id,
+          'itemName': '${item.brand} - ${item.category}',
+          'itemColor': item.color,
+          'imageUrl': item.imageUrl,
+          'quantityPending': quantityToMoveToPending,
+          'buyInPriceAtPending': item.buyInPrice,
+          'sellPriceAtPending': item.price,
+          'pendingTimestamp': Timestamp.now(),
+        };
+        DocumentReference pendingSaleRef = FirebaseFirestore.instance.collection('pending_sales').doc();
+        transaction.set(pendingSaleRef, pendingSaleData);
       });
-
-      // 2. Create a new document in 'pending_sales' collection
-      DocumentReference pendingSaleRef = FirebaseFirestore.instance.collection('pending_sales').doc(); // Auto-ID
-      batch.set(pendingSaleRef, pendingSaleData);
-
-      await batch.commit();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -86,8 +107,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
       print('Error moving item to pending: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to move item to pending: $e'), backgroundColor: Colors.redAccent),
+          SnackBar(content: Text('Failed to move item to pending: ${e.toString()}'), backgroundColor: Colors.redAccent),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _processingMoveToPending.remove(item.id!); // Remove item ID from processing set
+        });
       }
     }
   }
@@ -348,8 +375,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   padding: const EdgeInsets.all(8.0),
                   itemBuilder: (context, index) {
                     Item item = filteredItems[index];
-                    // Button is enabled if there's on-shelf stock to move to pending.
-                    bool canMarkPending = item.quantity > 0;
+                    bool isCurrentlyProcessing = _processingMoveToPending.contains(item.id);
+                    // Button is enabled if there's on-shelf stock AND it's not currently being processed.
+                    bool canMarkPending = item.quantity > 0 && !isCurrentlyProcessing;
 
                     return Card(
                       margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
@@ -378,15 +406,19 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         ),
                         title: Text('${item.brand} - ${item.category}'),
                         subtitle: Text(
-                          // 'quantity' now represents on-shelf, available (not pending) stock
                           'On Shelf: ${item.quantity} | Price: \$${item.price.toStringAsFixed(2)}'
                         ),
-                        isThreeLine: false, // Adjust if content needs more space
-                        trailing: IconButton(
-                          icon: const Icon(Icons.shopping_cart_checkout_outlined, color: Colors.blueAccent),
-                          tooltip: 'Move 1 to Pending Sale',
-                          onPressed: canMarkPending ? () => _markItemAsPending(item) : null,
-                        ),
+                        trailing: isCurrentlyProcessing
+                            ? const SizedBox( // Show a small loader for the specific item
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : IconButton(
+                                icon: const Icon(Icons.shopping_cart_checkout_outlined, color: Colors.blueAccent),
+                                tooltip: 'Move 1 to Pending Sale',
+                                onPressed: canMarkPending ? () => _markItemAsPending(item) : null,
+                              ),
                       ),
                     );
                   },
