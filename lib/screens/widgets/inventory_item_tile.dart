@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../models/item_model.dart'; // Your Item model
+import '../../models/item_model.dart';
+import '../../theme/app_theme.dart';
 
 class InventoryItemTile extends StatefulWidget {
   final Item item;
-  final Future<void> Function(Item item) onMarkItemAsPending; // Callback
+  final Future<void> Function(Item item) onMarkItemAsPending;
 
   const InventoryItemTile({
     super.key,
@@ -16,76 +17,126 @@ class InventoryItemTile extends StatefulWidget {
 }
 
 class _InventoryItemTileState extends State<InventoryItemTile> {
-  bool _isProcessing = false; // Local loading state for this tile
+  bool _isProcessing = false;
 
   Future<void> _handleMarkAsPending() async {
-    if (_isProcessing) return; // Prevent multiple clicks while processing
-
-    setState(() {
-      _isProcessing = true;
-    });
-
+    if (_isProcessing) return;
+    setState(() => _isProcessing = true);
     try {
       await widget.onMarkItemAsPending(widget.item);
-    } catch (e) {
-      // Error handling for the operation itself is done in the parent's method,
-      // but you could show a local error if needed.
-      print("Error occurred in tile: $e");
     } finally {
-      if (mounted) { // Check if widget is still in the tree
-        setState(() {
-          _isProcessing = false;
-        });
+      if (mounted) {
+        setState(() => _isProcessing = false);
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Determine if the button should be enabled based on item properties
-    bool canMarkPending = widget.item.quantity > 0 && !_isProcessing;
+    bool canMarkPending = widget.item.quantity > 0;
 
     return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
-      child: ListTile(
-        leading: SizedBox(
-          width: 60,
-          height: 60,
-          child: widget.item.imageUrl != null && widget.item.imageUrl!.isNotEmpty
-              ? Image.network(
-                  widget.item.imageUrl!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) =>
-                      const Icon(Icons.broken_image, size: 40),
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return Center(child: CircularProgressIndicator(
-                      value: loadingProgress.expectedTotalBytes != null ?
-                             loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes! : null,
-                    ));
-                  },
-                )
-              : Container(
-                  color: Colors.grey[200],
-                  child: const Icon(Icons.image_not_supported, size: 40, color: Colors.grey),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Image part of the card
+          Container(
+            height: 130, // Fixed height for the image area
+            width: double.infinity,
+            color: Colors.grey[200],
+            child: widget.item.imageUrl != null && widget.item.imageUrl!.isNotEmpty
+                ? Image.network(
+                    widget.item.imageUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) =>
+                        const Icon(Icons.broken_image, size: 40, color: AppTheme.lightText),
+                  )
+                : const Icon(Icons.image_not_supported, size: 40, color: AppTheme.lightText),
+          ),
+          
+          // Text and action part of the card
+          Padding(
+            padding: const EdgeInsets.all(10.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.item.brand,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-        ),
-        title: Text('${widget.item.brand} - ${widget.item.category}'),
-        subtitle: Text(
-          'On Shelf: ${widget.item.quantity} | Price: \$${widget.item.price.toStringAsFixed(2)}'
-        ),
-        isThreeLine: false,
-        trailing: _isProcessing
-            ? const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : IconButton(
-                icon: const Icon(Icons.shopping_cart_checkout_outlined, color: Colors.blueAccent),
-                tooltip: 'Move 1 to Pending Sale',
-                onPressed: canMarkPending ? _handleMarkAsPending : null,
-              ),
+                Text(
+                  widget.item.category,
+                  style: Theme.of(context).textTheme.bodySmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  widget.item.color,
+                  style: Theme.of(context).textTheme.bodySmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                
+                const SizedBox(height: 8), // Use SizedBox for spacing
+                // Price and Action Button Row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Column(
+                       crossAxisAlignment: CrossAxisAlignment.start,
+                       children: [
+                         Text(
+                          '\$${widget.item.buyInPrice.toStringAsFixed(2)}',
+                           style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: AppTheme.lightText,
+                              fontWeight: FontWeight.bold
+                            ),
+                        ),
+                         Text(
+                          '\$${widget.item.price.toStringAsFixed(2)}',
+                           style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: AppTheme.primaryPink,
+                              fontWeight: FontWeight.bold
+                            ),
+                        ),
+                        Text(
+                          'Stock: ${widget.item.quantity}',
+                           style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                       ],
+                    ),
+                    _isProcessing
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryPink),
+                        )
+                      : CircleAvatar(
+                          radius: 18,
+                          backgroundColor: canMarkPending ? AppTheme.accentPink.withOpacity(0.15) : Colors.grey.withOpacity(0.1),
+                          child: IconButton(
+                            padding: EdgeInsets.zero,
+                            icon: Icon(
+                              Icons.add_shopping_cart_outlined,
+                              color: canMarkPending ? AppTheme.accentPink : Colors.grey,
+                              size: 20,
+                            ),
+                            tooltip: 'Move 1 to Pending Sale',
+                            onPressed: canMarkPending ? _handleMarkAsPending : null,
+                          ),
+                        )
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

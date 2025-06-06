@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../models/pending_sale_model.dart'; // Your PendingSale model
+import '../../models/pending_sale_model.dart';
+import '../../theme/app_theme.dart';
 
 class PendingSaleItemTile extends StatefulWidget {
   final PendingSale pendingSale;
@@ -18,32 +19,13 @@ class PendingSaleItemTile extends StatefulWidget {
 }
 
 class _PendingSaleItemTileState extends State<PendingSaleItemTile> {
-  bool _isProcessing = false; // Local loading state for this tile
+  bool _isProcessing = false;
 
-  Future<void> _handleConfirmSale() async {
+  Future<void> _handleAction(Future<void> Function() action) async {
     if (_isProcessing) return;
     setState(() => _isProcessing = true);
     try {
-      await widget.onConfirm(widget.pendingSale);
-    } catch (e) {
-      // Error already handled in the parent's method (shows SnackBar)
-      print("Error during confirm from tile: $e");
-    } finally {
-      // If the widget is still mounted after the async operation
-      if (mounted) {
-        setState(() => _isProcessing = false);
-      }
-    }
-  }
-
-  Future<void> _handleCancelSale() async {
-    if (_isProcessing) return;
-    setState(() => _isProcessing = true);
-    try {
-      await widget.onCancel(widget.pendingSale);
-    } catch (e) {
-      // Error already handled in the parent's method
-      print("Error during cancel from tile: $e");
+      await action();
     } finally {
       if (mounted) {
         setState(() => _isProcessing = false);
@@ -54,54 +36,69 @@ class _PendingSaleItemTileState extends State<PendingSaleItemTile> {
   @override
   Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
-      child: ListTile(
-        leading: SizedBox(
-          width: 60,
-          height: 60,
-          child: widget.pendingSale.imageUrl != null && widget.pendingSale.imageUrl!.isNotEmpty
-              ? Image.network(
-                  widget.pendingSale.imageUrl!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) =>
-                      const Icon(Icons.broken_image, size: 40),
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return Center(child: CircularProgressIndicator(
-                      value: loadingProgress.expectedTotalBytes != null ?
-                             loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes! : null,
-                    ));
-                  },
-                )
-              : Container(
-                  color: Colors.grey[200],
-                  child: const Icon(Icons.image_not_supported, size: 40, color: Colors.grey),
-                ),
-        ),
-        title: Text(widget.pendingSale.itemName),
-        subtitle: Text('Qty Pending: ${widget.pendingSale.quantityPending}\nSell Price: \$${widget.pendingSale.sellPriceAtPending.toStringAsFixed(2)}'),
-        isThreeLine: true,
-        trailing: _isProcessing
-            ? const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : Row(
-                mainAxisSize: MainAxisSize.min,
+      // CardTheme applies styling
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12.0),
+              child: SizedBox(
+                width: 70,
+                height: 70,
+                child: widget.pendingSale.imageUrl != null && widget.pendingSale.imageUrl!.isNotEmpty
+                    ? Image.network(widget.pendingSale.imageUrl!, fit: BoxFit.cover)
+                    : Container(
+                        color: Colors.grey[200],
+                        child: const Icon(Icons.image_not_supported, size: 40, color: AppTheme.lightText),
+                      ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.cancel_outlined, color: Colors.red),
-                    tooltip: 'Cancel Sale',
-                    onPressed: _handleCancelSale,
+                  Text(
+                    widget.pendingSale.itemName,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.check_circle_outline, color: Colors.green),
-                    tooltip: 'Confirm Sale',
-                    onPressed: _handleConfirmSale,
+                   const SizedBox(height: 4),
+                  Text(
+                    'Qty Pending: ${widget.pendingSale.quantityPending}',
+                     style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                   const SizedBox(height: 4),
+                   Text(
+                    '\$${widget.pendingSale.sellPriceAtPending.toStringAsFixed(2)}',
+                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: AppTheme.primaryPink,
+                        fontWeight: FontWeight.bold
+                      ),
                   ),
                 ],
               ),
+            ),
+            const SizedBox(width: 8),
+            _isProcessing
+              ? const SizedBox(width: 48, height: 24, child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent),
+                      tooltip: 'Cancel Sale',
+                      onPressed: () => _handleAction(() => widget.onCancel(widget.pendingSale)),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.check_circle_outline, color: Colors.green),
+                      tooltip: 'Confirm Sale',
+                      onPressed: () => _handleAction(() => widget.onConfirm(widget.pendingSale)),
+                    ),
+                  ],
+                ),
+          ],
+        ),
       ),
     );
   }
