@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 import '../models/item_model.dart';
-import '../models/pending_sale_model.dart';
 import 'widgets/inventory_item_tile.dart';
-import 'widgets/pending_sale_item_tile.dart';
+import 'add_item_screen.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -30,12 +29,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
     });
   }
 
-  void _clearSearch() {
-    setState(() {
-      _searchController.clear();
-      _activeSearchQuery = '';
-    });
-  }
+  // void _clearSearch() {
+  //   setState(() {
+  //     _searchController.clear();
+  //     _activeSearchQuery = '';
+  //   });
+  // }
 
   // --- NEW: Dialog to get negotiated price ---
   Future<double?> _showNegotiatedPriceDialog(Item item) async {
@@ -137,56 +136,86 @@ class _InventoryScreenState extends State<InventoryScreen> {
     }
   }
 
-  Future<void> _confirmPendingSale(PendingSale pendingSale) async {
+  Future<void> _deleteItem(Item item) async {
+    print(item.id);
+    if (item.id == null) return;
+
+    // Show a confirmation dialog
+    final bool? shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Deletion'),
+        content: Text('Are you sure you want to permanently delete "${item.brand} - ${item.category}"? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false), // User cancels
+            child: const Text('Cancel'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(context).pop(true), // User confirms
+            style: FilledButton.styleFrom(backgroundColor: Colors.red[100]),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    // If the user did not confirm, do nothing
+    if (shouldDelete != true) {
+      return;
+    }
+
     try {
-      final profit = (pendingSale.sellPriceAtPending - pendingSale.buyInPriceAtPending) * pendingSale.quantityPending;
-      final transactionData = { 'itemId': pendingSale.itemId, 'itemName': pendingSale.itemName, 'itemColor': pendingSale.itemColor, 'imageUrl': pendingSale.imageUrl, 'quantitySold': pendingSale.quantityPending, 'buyInPriceAtSale': pendingSale.buyInPriceAtPending, 'sellPriceAtSale': pendingSale.sellPriceAtPending, 'profitOnSale': profit, 'finalSaleTimestamp': Timestamp.now()};
-      
+      // NOTE: This will delete the item from stock. It will NOT affect historical
+      // sales_transactions, which is generally the desired behavior.
+      // We should also delete any pending_sales for this item.
       WriteBatch batch = FirebaseFirestore.instance.batch();
-      batch.set(FirebaseFirestore.instance.collection('sales_transactions').doc(), transactionData);
-      batch.delete(FirebaseFirestore.instance.collection('pending_sales').doc(pendingSale.id));
-      batch.update(FirebaseFirestore.instance.collection('items').doc(pendingSale.itemId), {'lastModified': Timestamp.now()});
+
+      // 1. Delete the item from the main 'items' collection
+      batch.delete(FirebaseFirestore.instance.collection('items').doc(item.id));
+
+      // 2. Find and delete all pending sales associated with this item
+      QuerySnapshot pendingSalesSnapshot = await FirebaseFirestore.instance
+          .collection('pending_sales')
+          .where('itemId', isEqualTo: item.id)
+          .get();
+      
+      for (var doc in pendingSalesSnapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      
       await batch.commit();
 
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Sale confirmed!'), backgroundColor: Colors.green));
-    } catch(e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to confirm sale: $e'), backgroundColor: Colors.redAccent));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Item deleted successfully.'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      print("Error deleting item: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete item: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
     }
   }
 
-  Future<void> _cancelPendingSale(PendingSale pendingSale) async {
-    try {
-      WriteBatch batch = FirebaseFirestore.instance.batch();
-      batch.update(FirebaseFirestore.instance.collection('items').doc(pendingSale.itemId), {'quantity': FieldValue.increment(pendingSale.quantityPending), 'lastModified': Timestamp.now()});
-      batch.delete(FirebaseFirestore.instance.collection('pending_sales').doc(pendingSale.id));
-      await batch.commit();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Pending sale cancelled.'), backgroundColor: Colors.orange));
-    } catch(e) {
-       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to cancel sale: $e'), backgroundColor: Colors.redAccent));
-    }
+  void _navigateToEditItem(Item item) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => AddItemScreen(itemToEdit: item),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Inventory Management'),
-          bottom: const TabBar(
-            tabs: [
-              Tab(icon: Icon(Icons.storefront_outlined), text: 'In Stock'),
-              Tab(icon: Icon(Icons.hourglass_top_outlined), text: 'Pending Sales'),
-            ],
-          ),
-        ),
-        body: TabBarView(
-          children: [
-            _buildStorageTab(),
-            _buildPendingSalesTab(),
-          ],
-        ),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('In Stock'),
       ),
+      body: _buildStorageTab(),
     );
   }
 
@@ -256,7 +285,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           return categoryMatch && searchMatch;
         }).toList();
         
-        return Column(
+                return Column(
           children: [
             _buildFilterControls(categories),
             if (filteredItems.isEmpty)
@@ -266,17 +295,19 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                   child: Wrap(
-                    spacing: 12.0, // Horizontal space between cards
-                    runSpacing: 12.0, // Vertical space between rows of cards
+                    spacing: 12.0,
+                    runSpacing: 12.0,
                     alignment: WrapAlignment.start,
                     children: filteredItems.map((item) {
-                      // Each card is given a width so the Wrap widget knows how many to fit per line
                       return Container(
-                        width: 180, // Set a base width for each card
+                        width: 180,
                         child: InventoryItemTile(
                           key: ValueKey(item.id),
                           item: item,
                           onMarkItemAsPending: _markItemAsPending,
+                          // --- PASS THE NEW CALLBACK ---
+                          onEdit: _navigateToEditItem,
+                          onDelete: _deleteItem,
                         ),
                       );
                     }).toList(),
@@ -289,29 +320,4 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
   }
 
-  Widget _buildPendingSalesTab() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('pending_sales').orderBy('pendingTimestamp', descending: true).snapshots(),
-      builder: (BuildContext context, AsyncSnapshot<QuerySnapshot> snapshot) {
-        if (snapshot.hasError) return Center(child: Text('Something went wrong: ${snapshot.error}'));
-        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-        if (snapshot.data == null || snapshot.data!.docs.isEmpty) return const Center(child: Padding(padding: EdgeInsets.all(24.0), child: Text('No sales are currently pending confirmation.', textAlign: TextAlign.center)));
-
-        return ListView.builder(
-          itemCount: snapshot.data!.docs.length,
-          padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
-          itemBuilder: (context, index) {
-            DocumentSnapshot document = snapshot.data!.docs[index];
-            PendingSale pendingSale = PendingSale.fromMap(document.data()! as Map<String, dynamic>, document.id);
-            return PendingSaleItemTile(
-              key: ValueKey(pendingSale.id),
-              pendingSale: pendingSale,
-              onConfirm: _confirmPendingSale,
-              onCancel: _cancelPendingSale,
-            );
-          },
-        );
-      },
-    );
-  }
 }

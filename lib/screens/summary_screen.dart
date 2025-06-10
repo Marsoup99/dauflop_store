@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
+import 'package:month_year_picker/month_year_picker.dart'; // <-- Import the new package
+import '../theme/app_theme.dart';
 
 class SummaryScreen extends StatefulWidget {
   const SummaryScreen({super.key});
@@ -9,7 +12,9 @@ class SummaryScreen extends StatefulWidget {
 }
 
 class _SummaryScreenState extends State<SummaryScreen> {
+  DateTime _selectedDate = DateTime.now();
   bool _isLoading = true;
+
   int _totalSalesTransactions = 0;
   int _totalUnitsSold = 0;
   double _totalRevenue = 0.0;
@@ -19,30 +24,22 @@ class _SummaryScreenState extends State<SummaryScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchSalesSummary();
+    _fetchSalesSummaryForMonth(_selectedDate);
   }
 
-  Future<void> _fetchSalesSummary() async {
-    setState(() {
-      _isLoading = true;
-    });
+  Future<void> _fetchSalesSummaryForMonth(DateTime month) async {
+    setState(() => _isLoading = true);
+    final startOfMonth = DateTime(month.year, month.month, 1);
+    final endOfMonth = DateTime(month.year, month.month + 1, 0).add(const Duration(days: 1));
 
     try {
-      QuerySnapshot salesSnapshot =
-          await FirebaseFirestore.instance.collection('sales_transactions').get();
+      QuerySnapshot salesSnapshot = await FirebaseFirestore.instance
+          .collection('sales_transactions')
+          .where('finalSaleTimestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfMonth))
+          .where('finalSaleTimestamp', isLessThan: Timestamp.fromDate(endOfMonth))
+          .get();
 
-      if (salesSnapshot.docs.isEmpty) {
-        setState(() {
-          _isLoading = false;
-          // Reset all values if no sales
-          _totalSalesTransactions = 0;
-          _totalUnitsSold = 0;
-          _totalRevenue = 0.0;
-          _totalCogs = 0.0;
-          _totalProfit = 0.0;
-        });
-        return;
-      }
+      if (!mounted) return;
 
       int transactions = salesSnapshot.docs.length;
       int unitsSold = 0;
@@ -65,15 +62,26 @@ class _SummaryScreenState extends State<SummaryScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      print('Error fetching sales summary: $e');
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error fetching summary: $e'), backgroundColor: Colors.redAccent),
-        );
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error fetching summary: $e'), backgroundColor: Colors.redAccent));
       }
+    }
+  }
+
+  // --- UPDATED: Method now uses showMonthYearPicker ---
+  Future<void> _selectMonth(BuildContext context) async {
+    final DateTime? picked = await showMonthYearPicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked != null && (picked.month != _selectedDate.month || picked.year != _selectedDate.year)) {
+      setState(() {
+        _selectedDate = picked;
+      });
+      _fetchSalesSummaryForMonth(_selectedDate);
     }
   }
 
@@ -86,54 +94,85 @@ class _SummaryScreenState extends State<SummaryScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh Summary',
-            onPressed: _isLoading ? null : _fetchSalesSummary, // Disable while loading
+            onPressed: _isLoading ? null : () => _fetchSalesSummaryForMonth(_selectedDate),
           )
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: RefreshIndicator( // Allows pull-to-refresh
-                onRefresh: _fetchSalesSummary,
-                child: ListView( // Use ListView to allow scrolling if content grows
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildSummaryCard(
-                      title: 'Overall Performance',
-                      data: {
-                        'Total Sales Transactions:': _totalSalesTransactions.toString(),
-                        'Total Units Sold:': _totalUnitsSold.toString(),
-                        'Total Revenue:': '\$${_totalRevenue.toStringAsFixed(2)}',
-                        'Total COGS:': '\$${_totalCogs.toStringAsFixed(2)}',
-                        'Total Profit:': '\$${_totalProfit.toStringAsFixed(2)}',
-                      },
-                      profit: _totalProfit, // Pass profit to conditionally color it
+                    Text('Showing results for:', style: Theme.of(context).textTheme.bodySmall),
+                    Text(
+                      DateFormat('MMMM yyyy').format(_selectedDate),
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: AppTheme.darkText),
                     ),
-                    // You could add more cards here later, e.g., "Recent Sales List"
-                    // or charts if you want to get fancy.
-                    const SizedBox(height: 20),
-                    ElevatedButton.icon(
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Refresh Data'),
-                        onPressed: _isLoading ? null : _fetchSalesSummary,
-                    )
                   ],
                 ),
-              ),
+                TextButton.icon(
+                  icon: const Icon(Icons.calendar_month_outlined),
+                  label: const Text('Change'),
+                  onPressed: () => _selectMonth(context),
+                ),
+              ],
             ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : RefreshIndicator(
+                    onRefresh: () => _fetchSalesSummaryForMonth(_selectedDate),
+                    child: ListView(
+                      padding: const EdgeInsets.all(16.0),
+                      children: [
+                         if (_totalSalesTransactions > 0)
+                          _buildSummaryCard(
+                            title: 'Monthly Performance',
+                            data: {
+                              'Sales Transactions:': _totalSalesTransactions.toString(),
+                              'Units Sold:': _totalUnitsSold.toString(),
+                              'Revenue:': '\$${_totalRevenue.toStringAsFixed(2)}',
+                              'Cost of Goods:': '\$${_totalCogs.toStringAsFixed(2)}',
+                              'Profit:': '\$${_totalProfit.toStringAsFixed(2)}',
+                            },
+                            profit: _totalProfit,
+                          )
+                        else
+                          Center(
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 50.0),
+                              child: Text(
+                                'No sales recorded for ${DateFormat('MMMM yyyy').format(_selectedDate)}.',
+                                style: Theme.of(context).textTheme.titleMedium,
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildSummaryCard({required String title, required Map<String, String> data, double? profit}) {
-    Color profitColor = Colors.grey; // Default
+    Color profitColor = Colors.grey;
     if (profit != null) {
       if (profit > 0) profitColor = Colors.green;
       if (profit < 0) profitColor = Colors.red;
     }
 
     return Card(
-      elevation: 4.0,
-      margin: const EdgeInsets.only(bottom: 16.0),
+      elevation: 2,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -141,22 +180,22 @@ class _SummaryScreenState extends State<SummaryScreen> {
           children: [
             Text(
               title,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: AppTheme.darkText),
             ),
-            const SizedBox(height: 12.0),
+            const Divider(height: 24.0),
             ...data.entries.map((entry) {
               bool isProfitEntry = entry.key.toLowerCase().contains('profit');
               return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4.0),
+                padding: const EdgeInsets.symmetric(vertical: 6.0),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(entry.key, style: Theme.of(context).textTheme.titleMedium),
+                    Text(entry.key, style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppTheme.lightText)),
                     Text(
                       entry.value,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: isProfitEntry ? FontWeight.bold : FontWeight.normal,
-                        color: isProfitEntry ? profitColor : null,
+                        color: isProfitEntry ? profitColor : AppTheme.darkText,
                       ),
                     ),
                   ],
@@ -169,3 +208,4 @@ class _SummaryScreenState extends State<SummaryScreen> {
     );
   }
 }
+

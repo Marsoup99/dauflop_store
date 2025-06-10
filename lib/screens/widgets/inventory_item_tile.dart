@@ -5,11 +5,15 @@ import '../../theme/app_theme.dart';
 class InventoryItemTile extends StatefulWidget {
   final Item item;
   final Future<void> Function(Item item) onMarkItemAsPending;
+  final void Function(Item item) onEdit;
+  final void Function(Item item) onDelete;
 
   const InventoryItemTile({
     super.key,
     required this.item,
     required this.onMarkItemAsPending,
+    required this.onEdit,
+    required this.onDelete,
   });
 
   @override
@@ -38,24 +42,58 @@ class _InventoryItemTileState extends State<InventoryItemTile> {
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Image part of the card
-          Container(
-            height: 130, // Fixed height for the image area
-            width: double.infinity,
-            color: Colors.grey[200],
-            child: widget.item.imageUrl != null && widget.item.imageUrl!.isNotEmpty
-                ? Image.network(
-                    widget.item.imageUrl!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) =>
-                        const Icon(Icons.broken_image, size: 40, color: AppTheme.lightText),
-                  )
-                : const Icon(Icons.image_not_supported, size: 40, color: AppTheme.lightText),
+          // This AspectRatio widget will force its child to be square.
+          AspectRatio(
+            aspectRatio: 1.0, // 1.0 means width and height are the same
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Container(
+                  color: Colors.grey[200],
+                  child: widget.item.imageUrl != null && widget.item.imageUrl!.isNotEmpty
+                      ? Image.network(
+                          widget.item.imageUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Icon(Icons.broken_image, size: 40, color: AppTheme.lightText),
+                          )
+                      : const Icon(Icons.image_not_supported, size: 40, color: AppTheme.lightText),
+                ),
+                Positioned(
+                  top: 2,
+                  right: 2,
+                  child: Material(
+                    color: Colors.black.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(20),
+                    child: PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert, color: Colors.white, size: 18),
+                      onSelected: (value) {
+                        if (value == 'edit') {
+                          widget.onEdit(widget.item);
+                        } else if (value == 'delete') {
+                          widget.onDelete(widget.item);
+                        }
+                      },
+                      itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                        const PopupMenuItem<String>(
+                          value: 'edit',
+                          child: Text('Edit Item'),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'delete',
+                          child: Text('Delete Item', style: TextStyle(color: Colors.red)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           
-          // Text and action part of the card
+          // The text content below the image. No Expanded/Spacer needed.
           Padding(
             padding: const EdgeInsets.all(10.0),
             child: Column(
@@ -75,15 +113,13 @@ class _InventoryItemTileState extends State<InventoryItemTile> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                Text(
-                  widget.item.color,
-                  style: Theme.of(context).textTheme.bodySmall,
+                 Text(
+                  'Color: ${widget.item.color}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.lightText),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                
-                const SizedBox(height: 8), // Use SizedBox for spacing
-                // Price and Action Button Row
+                const SizedBox(height: 8),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.center,
@@ -91,7 +127,7 @@ class _InventoryItemTileState extends State<InventoryItemTile> {
                     Column(
                        crossAxisAlignment: CrossAxisAlignment.start,
                        children: [
-                         Text(
+                        Text(
                           '\$${widget.item.buyInPrice.toStringAsFixed(2)}',
                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
                               color: AppTheme.lightText,

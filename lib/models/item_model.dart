@@ -10,6 +10,7 @@ class Item {
   double price; // Current default selling price
   int quantity; // Total physical quantity currently in stock
   Timestamp? lastModified;
+  Timestamp? stockingDate; // <-- NEW FIELD for "Ngày nhập hàng"
 
   Item({
     this.id,
@@ -21,6 +22,7 @@ class Item {
     required this.price,
     required this.quantity,
     this.lastModified,
+    this.stockingDate, // <-- Added to constructor
   });
 
   Map<String, dynamic> toMap() {
@@ -33,6 +35,7 @@ class Item {
       'price': price,
       'quantity': quantity,
       'lastModified': lastModified ?? FieldValue.serverTimestamp(),
+      'stockingDate': stockingDate, // <-- Added to map
     };
   }
 
@@ -47,6 +50,7 @@ class Item {
       price: (map['price'] ?? 0.0).toDouble(),
       quantity: map['quantity'] ?? 0,
       lastModified: map['lastModified'] as Timestamp?,
+      stockingDate: map['stockingDate'] as Timestamp?, // <-- Read from map
     );
   }
 }
