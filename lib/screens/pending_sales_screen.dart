@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../localizations/app_localizations.dart';
 import '../models/pending_sale_model.dart';
 import 'widgets/pending_sale_item_tile.dart';
+import 'package:intl/intl.dart';
 
 class PendingSalesScreen extends StatefulWidget {
+  // --- FIX: The constructor should not require any parameters ---
   const PendingSalesScreen({super.key});
 
   @override
@@ -11,12 +14,16 @@ class PendingSalesScreen extends StatefulWidget {
 }
 
 class _PendingSalesScreenState extends State<PendingSalesScreen> {
-  // This screen will now manage the state for its own actions
-  // Note: The logic methods are copied from the old inventory_screen.dart
 
   Future<void> _confirmPendingSale(PendingSale pendingSale) async {
+    final loc = AppLocalizations.of(context);
     try {
       final profit = (pendingSale.sellPriceAtPending - pendingSale.buyInPriceAtPending) * pendingSale.quantityPending;
+      
+      // --- NEW: Create the saleMonth key ---
+      final now = DateTime.now();
+      final String saleMonthKey = DateFormat('yyyy-MM').format(now); // e.g., "2025-06"
+
       final transactionData = {
         'itemId': pendingSale.itemId,
         'itemName': pendingSale.itemName,
@@ -26,7 +33,8 @@ class _PendingSalesScreenState extends State<PendingSalesScreen> {
         'buyInPriceAtSale': pendingSale.buyInPriceAtPending,
         'sellPriceAtSale': pendingSale.sellPriceAtPending,
         'profitOnSale': profit,
-        'finalSaleTimestamp': Timestamp.now()
+        'finalSaleTimestamp': Timestamp.fromDate(now), // Use the timestamp from the 'now' variable
+        'saleMonth': saleMonthKey, // <-- ADDED THIS FIELD FOR FAST QUERYING
       };
       
       WriteBatch batch = FirebaseFirestore.instance.batch();
@@ -35,36 +43,39 @@ class _PendingSalesScreenState extends State<PendingSalesScreen> {
       batch.update(FirebaseFirestore.instance.collection('items').doc(pendingSale.itemId), {'lastModified': Timestamp.now()});
       await batch.commit();
 
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sale confirmed!'), backgroundColor: Colors.green));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(loc.translate('sale_confirmed_message')), backgroundColor: Colors.green));
     } catch(e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to confirm sale: $e'), backgroundColor: Colors.redAccent));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(loc.translate('sale_confirm_fail', params: {'error': e.toString()})), backgroundColor: Colors.redAccent));
     }
   }
 
   Future<void> _cancelPendingSale(PendingSale pendingSale) async {
+    final loc = AppLocalizations.of(context);
     try {
       WriteBatch batch = FirebaseFirestore.instance.batch();
       batch.update(FirebaseFirestore.instance.collection('items').doc(pendingSale.itemId), {'quantity': FieldValue.increment(pendingSale.quantityPending), 'lastModified': Timestamp.now()});
       batch.delete(FirebaseFirestore.instance.collection('pending_sales').doc(pendingSale.id));
       await batch.commit();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pending sale cancelled.'), backgroundColor: Colors.orange));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(loc.translate('sale_cancelled_message')), backgroundColor: Colors.orange));
     } catch(e) {
-       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to cancel sale: $e'), backgroundColor: Colors.redAccent));
+       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(loc.translate('sale_cancel_fail', params: {'error': e.toString()})), backgroundColor: Colors.redAccent));
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pending Sales'),
+        title: Text(loc.translate('pending_sales_title')),
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('pending_sales').orderBy('pendingTimestamp', descending: true).snapshots(),
         builder: (BuildContext context, AsyncSnapshot<QuerySnapshot> snapshot) {
-          if (snapshot.hasError) return Center(child: Text('Something went wrong: ${snapshot.error}'));
+          if (snapshot.hasError) return Center(child: Text('Ui, có lỗi rùi: ${snapshot.error}'));
           if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-          if (snapshot.data == null || snapshot.data!.docs.isEmpty) return const Center(child: Padding(padding: EdgeInsets.all(24.0), child: Text('No sales are currently pending confirmation.', textAlign: TextAlign.center)));
+          if (snapshot.data == null || snapshot.data!.docs.isEmpty) return Center(child: Padding(padding: const EdgeInsets.all(24.0), child: Text(loc.translate('no_pending_sales'), textAlign: TextAlign.center)));
 
           return ListView.builder(
             itemCount: snapshot.data!.docs.length,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../localizations/app_localizations.dart'; // Import localization
 import '../../models/pending_sale_model.dart';
 import '../../theme/app_theme.dart';
 
@@ -35,8 +36,9 @@ class _PendingSaleItemTileState extends State<PendingSaleItemTile> {
 
   @override
   Widget build(BuildContext context) {
+    final loc = AppLocalizations.of(context); // Get localization instance
+
     return Card(
-      // CardTheme applies styling
       child: Padding(
         padding: const EdgeInsets.all(12.0),
         child: Row(
@@ -65,7 +67,7 @@ class _PendingSaleItemTileState extends State<PendingSaleItemTile> {
                   ),
                    const SizedBox(height: 4),
                   Text(
-                    'Qty Pending: ${widget.pendingSale.quantityPending}',
+                    '${loc.translate('quantity_pending')}: ${widget.pendingSale.quantityPending}',
                      style: Theme.of(context).textTheme.bodyMedium,
                   ),
                    const SizedBox(height: 4),
@@ -87,12 +89,12 @@ class _PendingSaleItemTileState extends State<PendingSaleItemTile> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent),
-                      tooltip: 'Cancel Sale',
+                      tooltip: loc.translate('dialog_cancel_button'), // Use translated tooltip
                       onPressed: () => _handleAction(() => widget.onCancel(widget.pendingSale)),
                     ),
                     IconButton(
                       icon: const Icon(Icons.check_circle_outline, color: Colors.green),
-                      tooltip: 'Confirm Sale',
+                      tooltip: loc.translate('confirm_button'), // Use translated tooltip
                       onPressed: () => _handleAction(() => widget.onConfirm(widget.pendingSale)),
                     ),
                   ],

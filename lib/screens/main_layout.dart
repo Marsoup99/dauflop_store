@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'add_item_screen.dart';
 import 'inventory_screen.dart';
 import 'summary_screen.dart';
-import 'pending_sales_screen.dart'; // <-- Import the new screen
+import 'pending_sales_screen.dart';
 import '../theme/app_theme.dart';
 
 class MainLayout extends StatefulWidget {
@@ -16,12 +16,11 @@ class MainLayout extends StatefulWidget {
 class _MainLayoutState extends State<MainLayout> {
   int _selectedIndex = 0;
 
-  // --- UPDATED: Screens list now includes PendingSalesScreen ---
   static const List<Widget> _widgetOptions = <Widget>[
-    InventoryScreen(),    // Index 0
-    PendingSalesScreen(), // Index 1
-    AddItemScreen(),      // Index 2
-    SummaryScreen(),      // Index 3
+    InventoryScreen(),
+    PendingSalesScreen(),
+    AddItemScreen(),
+    SummaryScreen(),
   ];
 
   void _onItemTapped(int index) {
@@ -37,15 +36,13 @@ class _MainLayoutState extends State<MainLayout> {
         child: _widgetOptions.elementAt(_selectedIndex),
       ),
       bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed, // Good for 4+ items
-        // --- UPDATED: Navigation bar items ---
+        type: BottomNavigationBarType.fixed,
         items: <BottomNavigationBarItem>[
           const BottomNavigationBarItem(
             icon: Icon(Icons.storefront_outlined),
-            label: 'Inventory',
+            label: 'Kho Hàng',
           ),
           BottomNavigationBarItem(
-            // --- BADGE MOVED HERE ---
             icon: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance.collection('pending_sales').snapshots(),
               builder: (context, snapshot) {
@@ -57,15 +54,15 @@ class _MainLayoutState extends State<MainLayout> {
                 );
               },
             ),
-            label: 'Pending',
+            label: 'Chờ Xử Lý',
           ),
           const BottomNavigationBarItem(
             icon: Icon(Icons.add_circle_outline),
-            label: 'Add Item',
+            label: 'Thêm Mới',
           ),
           const BottomNavigationBarItem(
             icon: Icon(Icons.assessment_outlined),
-            label: 'Summary',
+            label: 'Báo Cáo',
           ),
         ],
         currentIndex: _selectedIndex,
