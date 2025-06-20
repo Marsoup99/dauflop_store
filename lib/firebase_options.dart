@@ -21,13 +21,25 @@ class DefaultFirebaseOptions {
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
-        return android;
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for android - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
       case TargetPlatform.iOS:
-        return ios;
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for ios - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
       case TargetPlatform.macOS:
-        return macos;
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for macos - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
       case TargetPlatform.windows:
-        return windows;
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for windows - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
       case TargetPlatform.linux:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for linux - '
@@ -43,41 +55,6 @@ class DefaultFirebaseOptions {
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: 'AIzaSyCGcAI_s-RJhdZjsZ4mmbv2T1qyrjsuLMk',
     appId: '1:80413761686:web:34a29e332eb229fa3622b7',
-    messagingSenderId: '80413761686',
-    projectId: 'dauflop-store',
-    authDomain: 'dauflop-store.firebaseapp.com',
-    storageBucket: 'dauflop-store.firebasestorage.app',
-  );
-
-  static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyCzpwjqUH5WgeHrUxkD3151de-DGvdzm8A',
-    appId: '1:80413761686:android:e882025aa514283b3622b7',
-    messagingSenderId: '80413761686',
-    projectId: 'dauflop-store',
-    storageBucket: 'dauflop-store.firebasestorage.app',
-  );
-
-  static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyDL5N22wrQQMWJ02TPjOdvlBrpSE5rColU',
-    appId: '1:80413761686:ios:d2684dcefa6481053622b7',
-    messagingSenderId: '80413761686',
-    projectId: 'dauflop-store',
-    storageBucket: 'dauflop-store.firebasestorage.app',
-    iosBundleId: 'com.example.dauflopStore',
-  );
-
-  static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyDL5N22wrQQMWJ02TPjOdvlBrpSE5rColU',
-    appId: '1:80413761686:ios:d2684dcefa6481053622b7',
-    messagingSenderId: '80413761686',
-    projectId: 'dauflop-store',
-    storageBucket: 'dauflop-store.firebasestorage.app',
-    iosBundleId: 'com.example.dauflopStore',
-  );
-
-  static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyCGcAI_s-RJhdZjsZ4mmbv2T1qyrjsuLMk',
-    appId: '1:80413761686:web:c82bc51d872ad9d73622b7',
     messagingSenderId: '80413761686',
     projectId: 'dauflop-store',
     authDomain: 'dauflop-store.firebaseapp.com',

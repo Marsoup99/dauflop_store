@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
-import '../../models/item_model.dart';
-import '../../theme/app_theme.dart';
+import '../models/item_model.dart';
+import '../theme/app_theme.dart';
 
 class InventoryItemTile extends StatefulWidget {
   final Item item;
   final Future<void> Function(Item item) onMarkItemAsPending;
   final void Function(Item item) onEdit;
   final void Function(Item item) onDelete;
+  final void Function() onImageTap;
 
   const InventoryItemTile({
     super.key,
@@ -14,6 +15,7 @@ class InventoryItemTile extends StatefulWidget {
     required this.onMarkItemAsPending,
     required this.onEdit,
     required this.onDelete,
+    required this.onImageTap,
   });
 
   @override
@@ -22,7 +24,7 @@ class InventoryItemTile extends StatefulWidget {
 
 class _InventoryItemTileState extends State<InventoryItemTile> {
   bool _isProcessing = false;
-
+  
   Future<void> _handleMarkAsPending() async {
     if (_isProcessing) return;
     setState(() => _isProcessing = true);
@@ -38,7 +40,7 @@ class _InventoryItemTileState extends State<InventoryItemTile> {
   @override
   Widget build(BuildContext context) {
     bool canMarkPending = widget.item.quantity > 0;
-
+    bool hasImage = widget.item.imageUrl != null && widget.item.imageUrl!.isNotEmpty;
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -46,20 +48,30 @@ class _InventoryItemTileState extends State<InventoryItemTile> {
         children: [
           // This AspectRatio widget will force its child to be square.
           AspectRatio(
-            aspectRatio: 1.0, // 1.0 means width and height are the same
+            aspectRatio: 1.0,
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Container(
-                  color: Colors.grey[200],
-                  child: widget.item.imageUrl != null && widget.item.imageUrl!.isNotEmpty
-                      ? Image.network(
-                          widget.item.imageUrl!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) =>
-                              const Icon(Icons.broken_image, size: 40, color: AppTheme.lightText),
-                          )
-                      : const Icon(Icons.image_not_supported, size: 40, color: AppTheme.lightText),
+                // --- UPDATED: Image is now wrapped for interactivity ---
+                Hero(
+                  tag: 'item_image_${widget.item.id}', // Unique tag for the animation
+                  child: Material( // Material is needed for the InkWell splash effect
+                    color: Colors.transparent,
+                    child: InkWell( // Use InkWell for tap effect
+                      onTap: hasImage ? widget.onImageTap : null,
+                      child: Container(
+                        color: Colors.grey[200],
+                        child: hasImage
+                            ? Image.network(
+                                widget.item.imageUrl!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    const Icon(Icons.broken_image, size: 40, color: AppTheme.lightText),
+                                )
+                            : const Icon(Icons.image_not_supported, size: 40, color: AppTheme.lightText),
+                      ),
+                    ),
+                  ),
                 ),
                 Positioned(
                   top: 2,
@@ -79,11 +91,11 @@ class _InventoryItemTileState extends State<InventoryItemTile> {
                       itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
                         const PopupMenuItem<String>(
                           value: 'edit',
-                          child: Text('Edit Item'),
+                          child: Text('Chỉnh Sửa'),
                         ),
                         const PopupMenuItem<String>(
                           value: 'delete',
-                          child: Text('Delete Item', style: TextStyle(color: Colors.red)),
+                          child: Text('Xóa Sản Phẩm', style: TextStyle(color: Colors.red)),
                         ),
                       ],
                     ),

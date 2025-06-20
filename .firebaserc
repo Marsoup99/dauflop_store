@@ -1,5 +1,16 @@
 {
-  "projects": {
-    "default": "dauflop-store"
-  }
+  "projects": {},
+  "targets": {
+    "dauflop-store": {
+      "hosting": {
+        "public": [
+          "dauflop-store"
+        ],
+        "admin": [
+          "dauflop-admin"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

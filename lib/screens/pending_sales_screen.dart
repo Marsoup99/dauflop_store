@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../localizations/app_localizations.dart';
 import '../models/pending_sale_model.dart';
-import 'widgets/pending_sale_item_tile.dart';
+import '../widgets/pending_sale_item_tile.dart';
 import 'package:intl/intl.dart';
 
 class PendingSalesScreen extends StatefulWidget {

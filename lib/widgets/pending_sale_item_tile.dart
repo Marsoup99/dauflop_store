@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../localizations/app_localizations.dart'; // Import localization
-import '../../models/pending_sale_model.dart';
-import '../../theme/app_theme.dart';
+import '../localizations/app_localizations.dart'; // Import localization
+import '../models/pending_sale_model.dart';
+import '../theme/app_theme.dart';
 
 class PendingSaleItemTile extends StatefulWidget {
   final PendingSale pendingSale;

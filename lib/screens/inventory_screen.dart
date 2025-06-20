@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 import '../localizations/app_localizations.dart'; // Import localization service
+import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
 import '../models/item_model.dart';
-import 'widgets/inventory_item_tile.dart';
+import '../widgets/inventory_item_tile.dart';
 import 'add_item_screen.dart';
+import 'image_viewer_screen.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -41,6 +43,19 @@ class _InventoryScreenState extends State<InventoryScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => AddItemScreen(itemToEdit: item),
+      ),
+    );
+  }
+
+  // --- NEW: Method to show the image viewer screen ---
+  void _showImageViewer(BuildContext context, String imageUrl, String heroTag) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => ImageViewerScreen(
+          imageUrl: imageUrl,
+          heroTag: heroTag,
+        ),
+        fullscreenDialog: true, // Presents the screen as a modal
       ),
     );
   }
@@ -130,9 +145,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
     }
   }
 
+// --- UPDATED: Method to handle item and image deletion ---
   Future<void> _deleteItem(Item item) async {
     final loc = AppLocalizations.of(context);
     if (item.id == null) return;
+
     final bool? shouldDelete = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -149,15 +166,35 @@ class _InventoryScreenState extends State<InventoryScreen> {
       ),
     );
     if (shouldDelete != true) return;
+
     try {
       WriteBatch batch = FirebaseFirestore.instance.batch();
       batch.delete(FirebaseFirestore.instance.collection('items').doc(item.id!));
       QuerySnapshot pendingSalesSnapshot = await FirebaseFirestore.instance.collection('pending_sales').where('itemId', isEqualTo: item.id).get();
       for (var doc in pendingSalesSnapshot.docs) { batch.delete(doc.reference); }
+      
+      // First, commit the database deletions
       await batch.commit();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(loc.translate('item_deleted_success')), backgroundColor: Colors.green));
+
+      // --- NEW: After database deletion succeeds, delete the image from Storage ---
+      if (item.imageUrl != null && item.imageUrl!.isNotEmpty) {
+        try {
+          await firebase_storage.FirebaseStorage.instance.refFromURL(item.imageUrl!).delete();
+        } catch (storageError) {
+          // This catch is for the storage deletion only.
+          // The item is already deleted from the database.
+          // We can just log this error and not bother the user, or show a non-critical warning.
+          print("Storage file deletion failed, but item was deleted from DB. Orphan file may exist. Error: $storageError");
+        }
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(loc.translate('item_deleted_success')), backgroundColor: Colors.green));
+      }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(loc.translate('item_deleted_fail', params: {'error': e.toString()})), backgroundColor: Colors.redAccent));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(loc.translate('item_deleted_fail', params: {'error': e.toString()})), backgroundColor: Colors.redAccent));
+      }
     }
   }
 
@@ -239,6 +276,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
                           onMarkItemAsPending: _markItemAsPending,
                           onEdit: _navigateToEditItem,
                           onDelete: _deleteItem,
+                          // --- PASS THE NEW CALLBACK ---
+                          onImageTap: () => _showImageViewer(
+                            context,
+                            item.imageUrl!,
+                            'item_image_${item.id!}', // Pass a unique hero tag
+                        ),
                         ),
                       );
                     }).toList(),
