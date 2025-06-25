@@ -23,8 +23,10 @@ class _CartScreenState extends State<CartScreen> {
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
   bool _isProcessing = false;
-
   PaymentMethod _selectedPaymentMethod = PaymentMethod.cod;
+
+  // --- UPDATE: Default state is now collapsed ---
+  bool _isSummaryVisible = false;
 
   @override
   void dispose() {
@@ -49,21 +51,20 @@ class _CartScreenState extends State<CartScreen> {
     double amountToPay = _selectedPaymentMethod == PaymentMethod.cod ? codDeposit : orderTotalValue;
     final String shortOrderId = (100000 + Random().nextInt(900000)).toString();
 
-    // *** IMPORTANT: Replace with your actual bank info ***
-    const String bankId = "970415"; // Techcombank BIN
-    const String accountNumber = "0368267654"; // Your account number
-    const String accountName = "TRUONG THI HUYNH NHI"; // Your account name (no accents)
+    const String bankId = "970415"; 
+    const String accountNumber = "0368267654"; 
+    const String accountName = "TRUONG THI HUYNH NHI";
 
     final int amountVND = (amountToPay * 1000).toInt();
     final String description = Uri.encodeComponent(shortOrderId);
     final String name = Uri.encodeComponent(accountName);
 
     final String qrDataURL = 'https://img.vietqr.io/image/$bankId-$accountNumber-compact2.png?amount=$amountVND&addInfo=$description&accountName=$name';
+    final String paymentUrl = 'https://api.vietqr.io/v2/pay?to=$accountNumber&amount=$amountVND&memo=$description&acqId=$bankId';
     
-    // --- FIX: Show the dialog first and await the result ---
     final bool? paymentConfirmed = await showDialog<bool>(
       context: context,
-      barrierDismissible: false, // User must choose an action
+      barrierDismissible: false,
       builder: (context) => VietQRDisplayDialog(
         qrDataURL: qrDataURL,
         amount: amountToPay.toInt(),
@@ -71,14 +72,12 @@ class _CartScreenState extends State<CartScreen> {
       ),
     );
 
-    // If user cancelled the dialog (by pressing Hủy đơn or dismissing it)
     if (paymentConfirmed != true) {
       showTopSnackBar(context, 'Đơn hàng đã được hủy.', isError: true);
       setState(() => _isProcessing = false);
-      return; // Stop the process
+      return; 
     }
 
-    // --- Proceed with creating the order ONLY if payment is confirmed ---
     try {
       final String paymentMethodString = _selectedPaymentMethod == PaymentMethod.cod ? "COD (Chờ cọc)" : "VietQR";
       final itemsList = _cartService.cart.value.map((cartItem) {
@@ -105,7 +104,6 @@ class _CartScreenState extends State<CartScreen> {
       _cartService.cart.value = [];
       if(mounted) {
          showTopSnackBar(context, 'Đặt hàng thành công! Shop sẽ liên hệ với bạn.');
-         // Pop twice to close the cart screen after the dialog
          Navigator.of(context).pop(); 
       }
     } catch (e) {
@@ -224,7 +222,23 @@ class _CartScreenState extends State<CartScreen> {
                           children: [
                             TextFormField(controller: _nameController, decoration: const InputDecoration(labelText: 'Họ và Tên'), validator: (v) => (v == null || v.trim().isEmpty) ? 'Vui lòng nhập họ và tên' : null),
                             const SizedBox(height: 12),
-                            TextFormField(controller: _phoneController, decoration: const InputDecoration(labelText: 'Số Điện Thoại'), keyboardType: TextInputType.phone, validator: (v) => (v == null || v.trim().isEmpty) ? 'Vui lòng nhập số điện thoại' : null),
+                            // --- FIX: Added phone number validation ---
+                            TextFormField(
+                                controller: _phoneController,
+                                decoration: const InputDecoration(labelText: 'Số Điện Thoại'),
+                                keyboardType: TextInputType.phone,
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Vui lòng nhập số điện thoại';
+                                  }
+                                  // Regular expression for a typical 10-digit Vietnamese phone number starting with 0
+                                  final phoneRegExp = RegExp(r'^0[0-9]{9}$');
+                                  if (!phoneRegExp.hasMatch(value)) {
+                                    return 'Số điện thoại không hợp lệ (gồm 10 số, bắt đầu bằng 0)';
+                                  }
+                                  return null;
+                                },
+                            ),
                              const SizedBox(height: 12),
                             TextFormField(controller: _addressController, decoration: const InputDecoration(labelText: 'Địa chỉ nhận hàng'), maxLines: 2, validator: (v) => (v == null || v.trim().isEmpty) ? 'Vui lòng nhập địa chỉ' : null),
                           ],
@@ -253,18 +267,50 @@ class _CartScreenState extends State<CartScreen> {
                   ),
                 ),
               ),
+              // --- FIX: Collapsible Checkout Summary Section ---
               Container(
                 padding: const EdgeInsets.all(16.0),
-                decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), spreadRadius: 0, blurRadius: 10)]),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), spreadRadius: 0, blurRadius: 10)]
+                ),
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Tiền hàng:', style: Theme.of(context).textTheme.bodyLarge), Text('${itemsTotal.toInt()} cá', style: Theme.of(context).textTheme.bodyLarge)]),
-                    Padding(padding: const EdgeInsets.only(top: 4.0), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Phí ship:', style: Theme.of(context).textTheme.bodyLarge), Text('${shippingFee.toInt()} cá', style: Theme.of(context).textTheme.bodyLarge)])),
-                    const Divider(height: 16),
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Tổng giá trị đơn:', style: Theme.of(context).textTheme.bodyLarge), Text('${orderTotal.toInt()} cá', style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold))]),
+                    // Collapsible Details Section
+                    Visibility(
+                      visible: _isSummaryVisible,
+                      child: Column(
+                        children: [
+                          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Tiền hàng:', style: Theme.of(context).textTheme.bodyLarge), Text('${itemsTotal.toInt()} cá', style: Theme.of(context).textTheme.bodyLarge)]),
+                          Padding(padding: const EdgeInsets.only(top: 4.0), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Phí ship:', style: Theme.of(context).textTheme.bodyLarge), Text('${shippingFee.toInt()} cá', style: Theme.of(context).textTheme.bodyLarge)])),
+                          const Divider(height: 16),
+                        ],
+                      ),
+                    ),
+                    // Always Visible Section
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text(paymentLabel, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                        Row(
+                          children: [
+                            Text(
+                              '${amountToPay.toInt()} cá',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppTheme.primaryPink, fontWeight: FontWeight.bold),
+                            ),
+                            // Toggle Button
+                            IconButton(
+                              icon: Icon(_isSummaryVisible ? Icons.expand_less : Icons.expand_more),
+                              tooltip: 'Hiện/Ẩn chi tiết',
+                              onPressed: () => setState(() => _isSummaryVisible = !_isSummaryVisible),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 8),
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(paymentLabel, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)), Text('${amountToPay.toInt()} cá', style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: AppTheme.primaryPink, fontWeight: FontWeight.bold))]),
-                    const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
@@ -275,7 +321,7 @@ class _CartScreenState extends State<CartScreen> {
                     ),
                   ],
                 ),
-              )
+              ),
             ],
           );
         },
