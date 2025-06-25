@@ -3,7 +3,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:month_year_picker/month_year_picker.dart';
-// Note: We no longer import the generated firebase_options.dart file
 import 'localizations/app_localizations.dart';
 import 'widgets/auth_wrapper.dart';
 import 'screens/public_store_screen.dart';
@@ -12,33 +11,38 @@ import 'theme/app_theme.dart';
 // This variable will be set by our build command.
 const flavor = String.fromEnvironment('APP_FLAVOR');
 
-// --- Manually define Firebase options for each site ---
+// --- RENAMED VARIABLES TO AVOID CONFLICT ---
+const kApiKey = String.fromEnvironment('ADMIN_API_KEY');
 
-// **IMPORTANT**: These are the settings for your ADMIN site.
-const FirebaseOptions adminFirebaseOptions = FirebaseOptions(
-  apiKey: "AIzaSyCGcAI_s-RJhdZjsZ4mmbv2T1qyrjsuLMk",
-  authDomain: "dauflop-admin.web.app", // Must be the main project's auth domain
+// Now use the variables to build your options
+final FirebaseOptions adminFirebaseOptions = FirebaseOptions(
+  apiKey: kApiKey, // Use the renamed variable
+  authDomain: "dauflop-admin.web.app",
   projectId: "dauflop-store",
-  storageBucket: "dauflop-store.appspot.com",
+  storageBucket: "dauflop-store.firebasestorage.app",
   messagingSenderId: "80413761686",
-  appId: "1:80413761686:web:34a29e332eb229fa3622b7", // Your admin web app's ID
+  appId: "1:80413761686:web:34a29e332eb229fa3622b7",
 );
 
-// These are the settings for your PUBLIC site.
-const FirebaseOptions publicFirebaseOptions = FirebaseOptions(
-  apiKey: "AIzaSyCGcAI_s-RJhdZjsZ4mmbv2T1qyrjsuLMk", // Often the same API key
+final FirebaseOptions publicFirebaseOptions = FirebaseOptions(
+  apiKey: kApiKey, // Use the renamed variable
   authDomain: "dauflop-store.firebaseapp.com",
   projectId: "dauflop-store",
-  storageBucket: "dauflop-store.appspot.com",
+  storageBucket: "dauflop-store.firebasestorage.app",
   messagingSenderId: "80413761686",
-  appId: "1:80413761686:web:c82bc51d872ad9d73622b7", // Your public web app's ID
+  appId: "1:80413761686:web:c82bc51d872ad9d73622b7",
 );
 
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // --- UPDATED: Explicitly choose which options to use ---
+  // Add a check to ensure keys were provided
+  if ((flavor == 'admin' && kApiKey.isEmpty)) {
+    print("FATAL ERROR: API Key for flavor '$flavor' was not provided in the build command.");
+    // You might want to show an error screen instead of just printing
+  }
+
   await Firebase.initializeApp(
     options: flavor == 'admin' ? adminFirebaseOptions : publicFirebaseOptions,
   );
@@ -51,6 +55,7 @@ void main() async {
 
   runApp(const MyApp());
 }
+
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});

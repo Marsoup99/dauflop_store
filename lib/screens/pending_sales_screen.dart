@@ -4,9 +4,9 @@ import '../localizations/app_localizations.dart';
 import '../models/pending_sale_model.dart';
 import '../widgets/pending_sale_item_tile.dart';
 import 'package:intl/intl.dart';
+import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
 
 class PendingSalesScreen extends StatefulWidget {
-  // --- FIX: The constructor should not require any parameters ---
   const PendingSalesScreen({super.key});
 
   @override
@@ -17,35 +17,85 @@ class _PendingSalesScreenState extends State<PendingSalesScreen> {
 
   Future<void> _confirmPendingSale(PendingSale pendingSale) async {
     final loc = AppLocalizations.of(context);
+    final firestore = FirebaseFirestore.instance;
+    final itemRef = firestore.collection('items').doc(pendingSale.itemId);
+    final pendingSaleRef = firestore.collection('pending_sales').doc(pendingSale.id);
+    final salesTransactionRef = firestore.collection('sales_transactions').doc();
+
     try {
-      final profit = (pendingSale.sellPriceAtPending - pendingSale.buyInPriceAtPending) * pendingSale.quantityPending;
-      
-      // --- NEW: Create the saleMonth key ---
-      final now = DateTime.now();
-      final String saleMonthKey = DateFormat('yyyy-MM').format(now); // e.g., "2025-06"
+      // --- UPDATE: Use a transaction for atomic operations ---
+      await firestore.runTransaction((transaction) async {
+        // 1. Read the current item document
+        final itemSnapshot = await transaction.get(itemRef);
 
-      final transactionData = {
-        'itemId': pendingSale.itemId,
-        'itemName': pendingSale.itemName,
-        'itemColor': pendingSale.itemColor,
-        'imageUrl': pendingSale.imageUrl,
-        'quantitySold': pendingSale.quantityPending,
-        'buyInPriceAtSale': pendingSale.buyInPriceAtPending,
-        'sellPriceAtSale': pendingSale.sellPriceAtPending,
-        'profitOnSale': profit,
-        'finalSaleTimestamp': Timestamp.fromDate(now), // Use the timestamp from the 'now' variable
-        'saleMonth': saleMonthKey, // <-- ADDED THIS FIELD FOR FAST QUERYING
-      };
-      
-      WriteBatch batch = FirebaseFirestore.instance.batch();
-      batch.set(FirebaseFirestore.instance.collection('sales_transactions').doc(), transactionData);
-      batch.delete(FirebaseFirestore.instance.collection('pending_sales').doc(pendingSale.id));
-      batch.update(FirebaseFirestore.instance.collection('items').doc(pendingSale.itemId), {'lastModified': Timestamp.now()});
-      await batch.commit();
+        if (!itemSnapshot.exists) {
+          // If the item doesn't exist, we can't check its quantity,
+          // but we can still record the sale and delete the pending entry.
+          print('Warning: Item with ID ${pendingSale.itemId} not found, but confirming sale anyway.');
+        }
 
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(loc.translate('sale_confirmed_message')), backgroundColor: Colors.green));
-    } catch(e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(loc.translate('sale_confirm_fail', params: {'error': e.toString()})), backgroundColor: Colors.redAccent));
+        // The item's quantity was already decremented when it was moved to pending.
+        // So the current quantity is the final quantity after this sale.
+        final currentQuantity = itemSnapshot.exists
+            ? (itemSnapshot.data() as Map<String, dynamic>)['quantity'] as int? ?? 0
+            : 0;
+
+        // 2. Prepare sales transaction data
+        final profit = (pendingSale.sellPriceAtPending - pendingSale.buyInPriceAtPending) * pendingSale.quantityPending;
+        final now = DateTime.now();
+        final String saleMonthKey = DateFormat('yyyy-MM').format(now);
+        final transactionData = {
+          'itemId': pendingSale.itemId,
+          'itemName': pendingSale.itemName,
+          'itemColor': pendingSale.itemColor,
+          'imageUrl': pendingSale.imageUrl,
+          'quantitySold': pendingSale.quantityPending,
+          'buyInPriceAtSale': pendingSale.buyInPriceAtPending,
+          'sellPriceAtSale': pendingSale.sellPriceAtPending,
+          'profitOnSale': profit,
+          'finalSaleTimestamp': Timestamp.fromDate(now),
+          'saleMonth': saleMonthKey,
+        };
+
+        // 3. Perform database writes
+        transaction.set(salesTransactionRef, transactionData);
+        transaction.delete(pendingSaleRef);
+
+        // 4. If this was the last item, delete the item document. Otherwise, update it.
+        if (currentQuantity == 0 && itemSnapshot.exists) {
+          transaction.delete(itemRef);
+        } else if (itemSnapshot.exists) {
+          transaction.update(itemRef, {'lastModified': Timestamp.now()});
+        }
+      });
+
+      // --- AFTER TRANSACTION SUCCEEDS ---
+      // 5. Check if the item was deleted and if it has an image to delete from storage.
+      final itemDocAfterSale = await itemRef.get();
+      if (!itemDocAfterSale.exists) { // This confirms the transaction deleted the item
+        if (pendingSale.imageUrl != null && pendingSale.imageUrl!.isNotEmpty) {
+          try {
+            await firebase_storage.FirebaseStorage.instance.refFromURL(pendingSale.imageUrl!).delete();
+            print("Successfully deleted sold-out item image from storage.");
+          } catch (e) {
+            print("Failed to delete item image from storage. It may be an orphan. Error: $e");
+          }
+        }
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(loc.translate('sale_confirmed_message')),
+          backgroundColor: Colors.green,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(loc.translate('sale_confirm_fail', params: {'error': e.toString()})),
+          backgroundColor: Colors.redAccent,
+        ));
+      }
     }
   }
 

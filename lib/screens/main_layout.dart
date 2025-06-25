@@ -5,6 +5,7 @@ import 'add_item_screen.dart';
 import 'inventory_screen.dart';
 import 'summary_screen.dart';
 import 'pending_sales_screen.dart';
+import 'incoming_orders_screen.dart'; // --- NEW: Import the new screen ---
 import '../localizations/app_localizations.dart';
 import '../theme/app_theme.dart';
 
@@ -47,7 +48,9 @@ class _MainLayoutState extends State<MainLayout> {
     }
   }
 
+  // --- UPDATE: Add the new screen to the options ---
   static const List<Widget> _widgetOptions = <Widget>[
+    IncomingOrdersScreen(), // <-- NEW: Set as the first screen
     InventoryScreen(),
     PendingSalesScreen(),
     AddItemScreen(),
@@ -88,21 +91,33 @@ class _MainLayoutState extends State<MainLayout> {
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         items: <BottomNavigationBarItem>[
+          // --- NEW: Tab for Incoming Orders ---
+          BottomNavigationBarItem(
+            icon: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('incoming_orders').snapshots(),
+              builder: (context, snapshot) {
+                final count = snapshot.hasData ? snapshot.data!.docs.length : 0;
+                return Badge(
+                  label: Text('$count'),
+                  isLabelVisible: count > 0,
+                  child: const Icon(Icons.call_received),
+                );
+              },
+            ),
+            label: loc.translate('incoming_orders'),
+          ),
           BottomNavigationBarItem(
             icon: const Icon(Icons.storefront_outlined),
             label: loc.translate('inventory'),
           ),
-          // --- FIX IS HERE: Added StreamBuilder and Badge to the Pending Sales tab icon ---
           BottomNavigationBarItem(
             icon: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance.collection('pending_sales').snapshots(),
               builder: (context, snapshot) {
-                // Default to 0 if there's no data or an error
                 final pendingCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
                 
                 return Badge(
                   label: Text('$pendingCount'),
-                  // Only show the badge if there are items pending
                   isLabelVisible: pendingCount > 0,
                   child: const Icon(Icons.hourglass_top_outlined),
                 );

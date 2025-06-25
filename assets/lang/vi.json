@@ -1,6 +1,7 @@
 {
   "inventory": "Kho Hàng",
   "pending_sales": "Chờ Xử Lý",
+  "incoming_orders": "Đơn Hàng Mới",
   "add_new": "Thêm Mới",
   "summary": "Báo Cáo",
   "in_stock": "Trong Kho",

@@ -1,7 +1,8 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
-import '../localizations/app_localizations.dart'; // Import localization service
+import '../localizations/app_localizations.dart'; 
 import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
 import '../models/item_model.dart';
 import '../widgets/inventory_item_tile.dart';
@@ -20,6 +21,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
   String _activeSearchQuery = '';
   String? _selectedCategory;
 
+  int _currentPage = 1;
+  final int _itemsPerPage = 18;
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -29,6 +33,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   void _performSearch() {
     setState(() {
       _activeSearchQuery = _searchController.text.toLowerCase();
+      _currentPage = 1;
     });
   }
 
@@ -36,6 +41,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
     setState(() {
       _searchController.clear();
       _activeSearchQuery = '';
+      _currentPage = 1;
+    });
+  }
+  
+  void _onCategoryChanged(String? newValue) {
+    setState(() {
+      _selectedCategory = newValue;
+      _currentPage = 1;
     });
   }
 
@@ -46,8 +59,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
       ),
     );
   }
-
-  // --- NEW: Method to show the image viewer screen ---
+  
   void _showImageViewer(BuildContext context, String imageUrl, String heroTag) {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -55,7 +67,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           imageUrl: imageUrl,
           heroTag: heroTag,
         ),
-        fullscreenDialog: true, // Presents the screen as a modal
+        fullscreenDialog: true,
       ),
     );
   }
@@ -145,7 +157,6 @@ class _InventoryScreenState extends State<InventoryScreen> {
     }
   }
 
-// --- UPDATED: Method to handle item and image deletion ---
   Future<void> _deleteItem(Item item) async {
     final loc = AppLocalizations.of(context);
     if (item.id == null) return;
@@ -173,17 +184,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
       QuerySnapshot pendingSalesSnapshot = await FirebaseFirestore.instance.collection('pending_sales').where('itemId', isEqualTo: item.id).get();
       for (var doc in pendingSalesSnapshot.docs) { batch.delete(doc.reference); }
       
-      // First, commit the database deletions
       await batch.commit();
 
-      // --- NEW: After database deletion succeeds, delete the image from Storage ---
       if (item.imageUrl != null && item.imageUrl!.isNotEmpty) {
         try {
           await firebase_storage.FirebaseStorage.instance.refFromURL(item.imageUrl!).delete();
         } catch (storageError) {
-          // This catch is for the storage deletion only.
-          // The item is already deleted from the database.
-          // We can just log this error and not bother the user, or show a non-critical warning.
           print("Storage file deletion failed, but item was deleted from DB. Orphan file may exist. Error: $storageError");
         }
       }
@@ -196,6 +202,79 @@ class _InventoryScreenState extends State<InventoryScreen> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(loc.translate('item_deleted_fail', params: {'error': e.toString()})), backgroundColor: Colors.redAccent));
       }
     }
+  }
+
+  Widget _buildPaginationControls(int totalPages) {
+    List<Widget> pageButtons = [];
+    
+    List<int> pageNumbers = [];
+    if (totalPages <= 7) { 
+      pageNumbers = List.generate(totalPages, (index) => index + 1);
+    } else {
+      pageNumbers.add(1);
+      if (_currentPage > 3) {
+        pageNumbers.add(-1); 
+      }
+      if (_currentPage > 2) {
+        pageNumbers.add(_currentPage - 1);
+      }
+      if (_currentPage != 1 && _currentPage != totalPages) {
+        pageNumbers.add(_currentPage);
+      }
+      if (_currentPage < totalPages - 1) {
+        pageNumbers.add(_currentPage + 1);
+      }
+      if (_currentPage < totalPages - 2) {
+        pageNumbers.add(-1); 
+      }
+      pageNumbers.add(totalPages);
+    }
+    
+    pageNumbers = pageNumbers.toSet().toList();
+
+    pageButtons.add(
+      IconButton(
+        icon: const Icon(Icons.navigate_before),
+        tooltip: 'Trang trước',
+        onPressed: _currentPage > 1 ? () => setState(() => _currentPage--) : null,
+      )
+    );
+
+    for (var pageNum in pageNumbers) {
+      if (pageNum == -1) {
+        pageButtons.add(const Padding(padding: EdgeInsets.symmetric(horizontal: 8.0), child: Text('...')));
+      } else {
+        pageButtons.add(
+          SizedBox(
+            width: 40,
+            child: TextButton(
+              style: TextButton.styleFrom(
+                backgroundColor: _currentPage == pageNum ? Theme.of(context).primaryColor.withOpacity(0.1) : null,
+              ),
+              child: Text('$pageNum'),
+              onPressed: () => setState(() => _currentPage = pageNum),
+            ),
+          )
+        );
+      }
+    }
+
+    pageButtons.add(
+      IconButton(
+        icon: const Icon(Icons.navigate_next),
+        tooltip: 'Trang sau',
+        onPressed: _currentPage < totalPages ? () => setState(() => _currentPage++) : null,
+      )
+    );
+
+    
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: pageButtons,
+      ),
+    );
   }
 
   @override
@@ -216,7 +295,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
               Expanded(
                 child: TextField(
                   controller: _searchController,
-                  decoration: InputDecoration(hintText: loc.translate('search_hint'), prefixIcon: const Icon(Icons.search)),
+                  decoration: InputDecoration(
+                    hintText: loc.translate('search_hint'), 
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchController.text.isNotEmpty 
+                      ? IconButton(icon: const Icon(Icons.clear), onPressed: _clearSearch) 
+                      : null,
+                  ),
+                  onSubmitted: (_) => _performSearch(),
                 ),
               ),
               const SizedBox(width: 10),
@@ -230,7 +316,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
               value: (_selectedCategory != null && categories.contains(_selectedCategory)) ? _selectedCategory : loc.translate('all_categories'),
               isExpanded: true,
               items: categories.map((String category) => DropdownMenuItem<String>(value: category, child: Text(category, overflow: TextOverflow.ellipsis))).toList(),
-              onChanged: (String? newValue) => setState(() => _selectedCategory = newValue),
+              onChanged: _onCategoryChanged,
             ),
         ],
       ),
@@ -240,7 +326,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
   Widget _buildStorageTab() {
     final loc = AppLocalizations.of(context);
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('items').orderBy('brand').snapshots(),
+      stream: FirebaseFirestore.instance.collection('items').orderBy('lastModified', descending: true).snapshots(),
       builder: (BuildContext context, AsyncSnapshot<QuerySnapshot> snapshot) {
         if (snapshot.hasError) return Center(child: Text('Ui, có lỗi rùi: ${snapshot.error}'));
         if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
@@ -254,39 +340,57 @@ class _InventoryScreenState extends State<InventoryScreen> {
           return categoryMatch && searchMatch;
         }).toList();
         
+        final totalItems = filteredItems.length;
+        final totalPages = (totalItems / _itemsPerPage).ceil();
+        if (totalPages > 0 && _currentPage > totalPages) {
+          _currentPage = totalPages;
+        } else if (totalPages == 0) {
+          _currentPage = 1;
+        }
+
+        final startIndex = (_currentPage - 1) * _itemsPerPage;
+        final endIndex = min(startIndex + _itemsPerPage, totalItems);
+        final itemsForCurrentPage = filteredItems.sublist(startIndex, endIndex);
+
         return Column(
           children: [
             _buildFilterControls(categories, loc),
             if (filteredItems.isEmpty)
               Expanded(child: Center(child: Padding(padding: const EdgeInsets.all(24.0), child: Text(loc.translate('no_items_found'), textAlign: TextAlign.center))))
             else
+              // --- FIX IS HERE: Replace GridView with a flexible Wrap layout ---
               Expanded(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  padding: const EdgeInsets.all(16.0),
                   child: Wrap(
-                    spacing: 12.0,
-                    runSpacing: 12.0,
-                    alignment: WrapAlignment.start,
-                    children: filteredItems.map((item) {
+                    spacing: 12.0, // Horizontal space between items
+                    runSpacing: 12.0, // Vertical space between items
+                    children: itemsForCurrentPage.map((item) {
+                      // Constrain the width, but allow height to be flexible
                       return SizedBox(
-                        width: 180, 
+                        width: 180,
                         child: InventoryItemTile(
                           key: ValueKey(item.id),
                           item: item,
                           onMarkItemAsPending: _markItemAsPending,
                           onEdit: _navigateToEditItem,
                           onDelete: _deleteItem,
-                          // --- PASS THE NEW CALLBACK ---
                           onImageTap: () => _showImageViewer(
                             context,
                             item.imageUrl!,
-                            'item_image_${item.id!}', // Pass a unique hero tag
-                        ),
+                            'item_image_${item.id!}',
+                          ),
                         ),
                       );
                     }).toList(),
                   ),
                 ),
+              ),
+              
+            if (totalPages > 1)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 8.0),
+                child: _buildPaginationControls(totalPages),
               ),
           ],
         );
