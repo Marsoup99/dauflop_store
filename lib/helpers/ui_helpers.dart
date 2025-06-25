@@ -16,7 +16,7 @@ void showTopSnackBar(BuildContext context, String message, {bool isError = false
       backgroundColor: isError 
           ? Colors.redAccent.withOpacity(0.5) 
           : Colors.black.withOpacity(0.5),
-      duration: const Duration(seconds: 1),
+      duration: const Duration(seconds: 2),
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),

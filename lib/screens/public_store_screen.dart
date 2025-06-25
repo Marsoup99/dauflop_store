@@ -2,10 +2,11 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/services.dart'; // --- NEW: Import for clipboard functionality
 import '../models/item_model.dart';
-import '../services/cart_service.dart'; // Import CartService
+import '../services/cart_service.dart';
 import '../widgets/public_item_card.dart';
-import '../screens/cart_screen.dart'; // Import CartScreen
+import '../screens/cart_screen.dart';
 import '../theme/app_theme.dart';
 
 class PublicStoreScreen extends StatefulWidget {
@@ -20,7 +21,7 @@ class _PublicStoreScreenState extends State<PublicStoreScreen> {
   String? _selectedCategory;
   List<Item> _allItems = []; 
   final SearchController _searchController = SearchController();
-  final CartService _cartService = CartService(); // Lấy đối tượng CartService
+  final CartService _cartService = CartService();
 
   int _currentPage = 1;
   final int _itemsPerPage = 18;
@@ -46,15 +47,89 @@ class _PublicStoreScreenState extends State<PublicStoreScreen> {
     });
   }
 
+  void _showAboutDialog() {
+    const zaloNumber = '0368267654'; // Define the number here for re-use
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text("Về DauFlop Store"),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                const Text(
+                  "Shop hàng nhỏ lẻ bán hàng zui zẻ",
+                  style: TextStyle(fontSize: 16),
+                ),
+                const SizedBox(height: 16),
+                // --- UPDATE: Replaced SelectableText with a Row for better UX ---
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        "Liên hệ tư vấn qua Zalo: $zaloNumber",
+                        style: TextStyle(fontSize: 16),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.copy_outlined, size: 22),
+                      tooltip: 'Sao chép SĐT Zalo',
+                      onPressed: () {
+                        Clipboard.setData(const ClipboardData(text: zaloNumber));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Đã sao chép số Zalo!')),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Đóng'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('DauFlop Store'),
-        backgroundColor: Colors.white,
-        foregroundColor: AppTheme.darkText,
+        backgroundColor: AppTheme.primaryPink,
+        foregroundColor: AppTheme.lightPinkBackground,
         elevation: 1,
-        // --- NEW: Add Cart Icon to AppBar ---
+        
+        leading: IconButton(
+          icon: const Icon(Icons.info_outline),
+          tooltip: 'Giới thiệu',
+          onPressed: _showAboutDialog,
+        ),
+
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/images/my_logo.png',
+              height: 28, 
+              errorBuilder: (context, error, stackTrace) {
+                return const Icon(Icons.storefront, color: AppTheme.lightPinkBackground);
+              },
+            ),
+            const SizedBox(width: 8),
+            const Text("Store của Đậu"),
+          ],
+        ),
+        centerTitle: true,
+
         actions: [
           ValueListenableBuilder<List>(
             valueListenable: _cartService.cart,

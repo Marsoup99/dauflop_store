@@ -74,7 +74,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         mainAxisSize: MainAxisSize.min, // Make row only as wide as its children
                         children: [
                            // Assumes you have a google logo asset
-                           Image.asset('assets/images/google_logo.png', height: 22.0),
+                           Image.asset('assets/images/my_logo.png', height: 22.0),
                            const SizedBox(width: 12),
                            const Text('Đăng nhập với Google'),
                         ],
