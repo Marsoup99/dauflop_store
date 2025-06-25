@@ -1,5 +1,3 @@
-
-// File: lib/widgets/vietqr_display_dialog.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
@@ -29,10 +27,9 @@ class VietQRDisplayDialog extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            // Display the QR Code image from the URL
             SizedBox(
-              width: 250,
-              height: 250,
+              width: 450,
+              height: 450,
               child: Image.network(
                 qrDataURL,
                 fit: BoxFit.contain,
@@ -51,7 +48,6 @@ class VietQRDisplayDialog extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-            // Display payment details
             ListTile(
               title: const Text('Số tiền cần chuyển'),
               subtitle: Text(
@@ -78,11 +74,29 @@ class VietQRDisplayDialog extends StatelessWidget {
           ],
         ),
       ),
-      actions: [
+      // --- UPDATE: Added new action buttons ---
+      actions: <Widget>[
+        // Nút Hủy đơn
         TextButton(
-          child: const Text('Đóng'),
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.redAccent,
+          ),
+          child: const Text('Hủy đơn'),
           onPressed: () {
-            Navigator.of(context).pop();
+            // Trả về 'false' để báo hiệu việc hủy đơn
+            Navigator.of(context).pop(false);
+          },
+        ),
+        // Nút Xác nhận đã chuyển tiền
+        FilledButton.icon(
+          icon: const Icon(Icons.check),
+          label: const Text('Đã chuyển tiền'),
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.green,
+          ),
+          onPressed: () {
+            // Trả về 'true' để báo hiệu việc xác nhận
+            Navigator.of(context).pop(true);
           },
         ),
       ],

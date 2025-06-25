@@ -1,10 +1,11 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/cart_service.dart';
 import '../models/cart_item_model.dart';
 import '../theme/app_theme.dart';
 import '../helpers/ui_helpers.dart';
-import '../widgets/vietqr_display_dialog.dart'; // --- NEW: Import the QR dialog ---
+import '../widgets/vietqr_display_dialog.dart';
 
 enum PaymentMethod { cod, vietQR }
 
@@ -37,6 +38,7 @@ class _CartScreenState extends State<CartScreen> {
     if (!_formKey.currentState!.validate()) {
       return;
     }
+    
     setState(() => _isProcessing = true);
 
     const double shippingFee = 15.0;
@@ -44,43 +46,71 @@ class _CartScreenState extends State<CartScreen> {
     final double itemsTotal = _cartService.totalPrice;
     final double orderTotalValue = itemsTotal + shippingFee;
     
-    String paymentMethodString = _selectedPaymentMethod == PaymentMethod.cod ? "COD" : "VietQR";
     double amountToPay = _selectedPaymentMethod == PaymentMethod.cod ? codDeposit : orderTotalValue;
+    final String shortOrderId = (100000 + Random().nextInt(900000)).toString();
 
-    final itemsList = _cartService.cart.value.map((cartItem) {
-      return {'id': cartItem.item.id, 'brand': cartItem.item.brand, 'category': cartItem.item.category, 'color': cartItem.item.color, 'price': cartItem.item.price, 'buyInPrice': cartItem.item.buyInPrice, 'imageUrl': cartItem.item.imageUrl, 'quantity': cartItem.quantity};
-    }).toList();
+    // *** IMPORTANT: Replace with your actual bank info ***
+    const String bankId = "970415"; // Techcombank BIN
+    const String accountNumber = "0368267654"; // Your account number
+    const String accountName = "TRUONG THI HUYNH NHI"; // Your account name (no accents)
 
-    final newOrderRef = FirebaseFirestore.instance.collection('incoming_orders').doc();
-    final orderData = {
-      'orderId': newOrderRef.id, 'customerName': _nameController.text.trim(), 'customerPhone': _phoneController.text.trim(), 'customerAddress': _addressController.text.trim(),
-      'shippingMethod': paymentMethodString, 'items': itemsList, 'orderTotalValue': orderTotalValue, 'amountToPay': amountToPay,
-      'orderTimestamp': FieldValue.serverTimestamp(), 'paymentStatus': 'unpaid',
-    };
+    final int amountVND = (amountToPay * 1000).toInt();
+    final String description = Uri.encodeComponent(shortOrderId);
+    final String name = Uri.encodeComponent(accountName);
+
+    final String qrDataURL = 'https://img.vietqr.io/image/$bankId-$accountNumber-compact2.png?amount=$amountVND&addInfo=$description&accountName=$name';
     
-    try {
-        // --- FIX: Only create the order, DO NOT update stock ---
-        await newOrderRef.set(orderData);
-        
-        if (_selectedPaymentMethod == PaymentMethod.vietQR) {
-          const bankId = "970489"; // Techcombank BIN
-          const accountNumber = "0368267654"; // Your account number
-          
-          final qrDataURL = 'https://img.vietqr.io/image/$bankId-$accountNumber-compact2.png?amount=${(amountToPay * 1000).toInt()}&addInfo=${newOrderRef.id}';
-          await showDialog(
-            context: context,
-            builder: (context) => VietQRDisplayDialog(qrDataURL: qrDataURL, amount: (amountToPay).toInt(), orderId: newOrderRef.id),
-          );
-        }
+    // --- FIX: Show the dialog first and await the result ---
+    final bool? paymentConfirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false, // User must choose an action
+      builder: (context) => VietQRDisplayDialog(
+        qrDataURL: qrDataURL,
+        amount: amountToPay.toInt(),
+        orderId: shortOrderId,
+      ),
+    );
 
-        _cartService.cart.value = [];
-        if(mounted) {
-           showTopSnackBar(context, 'Đặt hàng thành công! Shop sẽ liên hệ với bạn.');
-           Navigator.of(context).pop(); 
-        }
+    // If user cancelled the dialog (by pressing Hủy đơn or dismissing it)
+    if (paymentConfirmed != true) {
+      showTopSnackBar(context, 'Đơn hàng đã được hủy.', isError: true);
+      setState(() => _isProcessing = false);
+      return; // Stop the process
+    }
+
+    // --- Proceed with creating the order ONLY if payment is confirmed ---
+    try {
+      final String paymentMethodString = _selectedPaymentMethod == PaymentMethod.cod ? "COD (Chờ cọc)" : "VietQR";
+      final itemsList = _cartService.cart.value.map((cartItem) {
+        return {'id': cartItem.item.id, 'brand': cartItem.item.brand, 'category': cartItem.item.category, 'color': cartItem.item.color, 'price': cartItem.item.price, 'buyInPrice': cartItem.item.buyInPrice, 'imageUrl': cartItem.item.imageUrl, 'quantity': cartItem.quantity};
+      }).toList();
+
+      final newOrderRef = FirebaseFirestore.instance.collection('incoming_orders').doc();
+      final orderData = {
+        'orderId': newOrderRef.id, 
+        'shortOrderId': shortOrderId,
+        'customerName': _nameController.text.trim(), 
+        'customerPhone': _phoneController.text.trim(), 
+        'customerAddress': _addressController.text.trim(),
+        'shippingMethod': paymentMethodString, 
+        'items': itemsList, 
+        'orderTotalValue': orderTotalValue, 
+        'amountToPay': amountToPay,
+        'orderTimestamp': FieldValue.serverTimestamp(), 
+        'paymentStatus': 'unpaid',
+      };
+      
+      await newOrderRef.set(orderData);
+
+      _cartService.cart.value = [];
+      if(mounted) {
+         showTopSnackBar(context, 'Đặt hàng thành công! Shop sẽ liên hệ với bạn.');
+         // Pop twice to close the cart screen after the dialog
+         Navigator.of(context).pop(); 
+      }
     } catch (e) {
       if (mounted) {
-        showTopSnackBar(context, 'Đã có lỗi xảy ra. Vui lòng thử lại.', isError: true);
+        showTopSnackBar(context, 'Lỗi gửi đơn hàng: $e', isError: true);
       }
     } finally {
       if (mounted) {
@@ -112,14 +142,18 @@ class _CartScreenState extends State<CartScreen> {
 
           String paymentLabel = "Cần thanh toán:";
           double amountToPay = 0;
+          String buttonLabel = "Xác nhận";
+          
           switch (_selectedPaymentMethod) {
             case PaymentMethod.cod:
               paymentLabel = "Số tiền cần cọc:";
               amountToPay = codDeposit;
+              buttonLabel = "Xác nhận và Cọc tiền";
               break;
             case PaymentMethod.vietQR:
-              paymentLabel = "Cần thanh toán:";
+              paymentLabel = "Thanh toán ngay:";
               amountToPay = orderTotal;
+              buttonLabel = "Xác nhận và Quét mã QR";
               break;
           }
 
@@ -131,7 +165,6 @@ class _CartScreenState extends State<CartScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // ... (Customer Info Form remains the same)
                       ListView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
@@ -200,20 +233,18 @@ class _CartScreenState extends State<CartScreen> {
                       const SizedBox(height: 24),
                       const Divider(),
                       const SizedBox(height: 16),
-
                       Text('Phương Thức Thanh Toán', style: Theme.of(context).textTheme.titleLarge),
                       const SizedBox(height: 8),
                       RadioListTile<PaymentMethod>(
-                        title: const Text('Thanh toán khi nhận hàng (COD)'),
-                        subtitle: Text('Phí ship: ${shippingFee.toInt()}k. Cọc trước: ${codDeposit.toInt()}k.'),
+                        title: const Text('Giao hàng (COD)'),
+                        subtitle: const Text('Cọc trước 30k qua VietQR, phần còn lại thanh toán khi nhận hàng.'),
                         value: PaymentMethod.cod,
                         groupValue: _selectedPaymentMethod,
                         onChanged: (PaymentMethod? value) => setState(() => _selectedPaymentMethod = value!),
                       ),
-                      // --- REMOVED Bank Transfer, replaced with VietQR ---
                       RadioListTile<PaymentMethod>(
-                        title: const Text('Chuyển khoản qua VietQR'),
-                        subtitle: Text('Phí ship: ${shippingFee.toInt()}k. Vui lòng quét mã để chuyển khoản toàn bộ giá trị đơn hàng.'),
+                        title: const Text('Chuyển khoản VietQR'),
+                        subtitle: const Text('Thanh toán toàn bộ giá trị đơn hàng qua mã QR.'),
                         value: PaymentMethod.vietQR,
                         groupValue: _selectedPaymentMethod,
                         onChanged: (PaymentMethod? value) => setState(() => _selectedPaymentMethod = value!),
@@ -238,7 +269,7 @@ class _CartScreenState extends State<CartScreen> {
                       width: double.infinity,
                       child: ElevatedButton.icon(
                         icon: _isProcessing ? Container(width: 20, height: 20, child: const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.check_circle_outline),
-                        label: Text(_isProcessing ? 'Đang xử lý...' : 'Xác Nhận Đơn Hàng'),
+                        label: Text(_isProcessing ? 'Đang xử lý...' : buttonLabel),
                         onPressed: _isProcessing ? null : _submitOrder,
                       ),
                     ),
